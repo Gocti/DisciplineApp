@@ -29,6 +29,9 @@ public class MainFrame extends JFrame {
         initUi();
         loadTodayTasks();
         startDateWatcher();
+        
+        // Инициализируем трей
+        TrayManager.install(this);
     }
 
     // ================= THEME =================
@@ -79,7 +82,15 @@ public class MainFrame extends JFrame {
         setTitle("Прога для блокировки");
         setSize(900, 600);
         setLocationRelativeTo(null);
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        
+        // Обработчик закрытия окна - сворачивание в трей
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                setVisible(false);
+            }
+        });
     }
 
     // ================= UI =================

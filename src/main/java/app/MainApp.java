@@ -17,6 +17,8 @@ public final class MainApp {
     private static final String KEY_ACCENT = "accentColor";
     private static final String KEY_FONT_NAME = "fontName";
     private static final String KEY_FONT_SIZE = "fontSize";
+    private static final String KEY_VERSION = "version";
+    private static final String CURRENT_VERSION = "1.0.0";
 
     private MainApp() {}
 
@@ -24,8 +26,84 @@ public final class MainApp {
     static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             applyLookAndFeel();
-            new ui.MainFrame().setVisible(true);
+            
+            // Создаём главное окно
+            ui.MainFrame frame = new ui.MainFrame();
+            frame.setVisible(true);
+            
+            // Проверяем обновления через 2 секунды после запуска
+            Timer checkUpdateTimer = new Timer(2000, e -> checkForUpdates(frame));
+            checkUpdateTimer.setRepeats(false);
+            checkUpdateTimer.start();
         });
+    }
+
+    /**
+     * Проверяет наличие обновлений
+     */
+    private static void checkForUpdates(JFrame frame) {
+        try {
+            String savedVersion = PREFS.get(KEY_VERSION, CURRENT_VERSION);
+            
+            // Получаем последнюю версию из GitHub API
+            String latestVersion = getLatestVersionFromGitHub();
+            
+            if (latestVersion != null && !latestVersion.equals(savedVersion)) {
+                int result = JOptionPane.showConfirmDialog(
+                    frame,
+                    "Доступна новая версия: " + latestVersion + "\n" +
+                    "Текущая версия: " + savedVersion + "\n\n" +
+                    "Обновить приложение?",
+                    "Обновление доступно",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.INFORMATION_MESSAGE
+                );
+                
+                if (result == JOptionPane.YES_OPTION) {
+                    String installerUrl = "https://github.com/Gocti/DisciplineApp/releases/latest/download/DisciplineApp-installer.exe";
+                    updater.UpdateManager.update(installerUrl);
+                }
+            }
+        } catch (Exception e) {
+            // Тихо игнорируем ошибки проверки обновлений
+        }
+    }
+    
+    /**
+     * Получает последнюю версию приложения из GitHub API
+     */
+    private static String getLatestVersionFromGitHub() {
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(5))
+                    .build();
+            
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create("https://api.github.com/repos/Gocti/DisciplineApp/releases/latest"))
+                    .header("Accept", "application/vnd.github.v3+json")
+                    .header("User-Agent", "DisciplineApp")
+                    .GET()
+                    .build();
+            
+            java.net.http.HttpResponse<String> response = client.send(request,
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                String json = response.body();
+                // Парсим JSON вручную или через простой поиск
+                int tagStart = json.indexOf("\"tag_name\":\"");
+                if (tagStart >= 0) {
+                    tagStart += 12;
+                    int tagEnd = json.indexOf("\"", tagStart);
+                    if (tagEnd > tagStart) {
+                        return json.substring(tagStart, tagEnd);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Игнорируем ошибки
+        }
+        return null;
     }
 
     // ===================== THEME MODE =====================
@@ -147,6 +225,15 @@ public final class MainApp {
         String name = PREFS.get(KEY_FONT_NAME, "Arial");
         int size = PREFS.getInt(KEY_FONT_SIZE, 14);
         return new Font(name, Font.PLAIN, size);
+    }
+
+    // ===================== VERSION =====================
+    public static String getCurrentVersion() {
+        return PREFS.get(KEY_VERSION, CURRENT_VERSION);
+    }
+
+    public static void setVersion(String version) {
+        PREFS.put(KEY_VERSION, version);
     }
 }
 

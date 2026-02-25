@@ -40,30 +40,31 @@ public final class UpdateManager {
     private static void download(String url, Path target)
             throws IOException, InterruptedException {
 
-        HttpClient client = HttpClient.newBuilder()
+        try (HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .build();
+                .build()) {
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .GET()
-                .build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .build();
 
-        HttpResponse<Path> response;
-        try {
-            response = client.send(request,
-                    HttpResponse.BodyHandlers.ofFile(
-                            target,
-                            StandardOpenOption.CREATE,
-                            StandardOpenOption.TRUNCATE_EXISTING
-                    ));
-        } catch (IOException | InterruptedException e) {
-            LOG.log(Level.SEVERE, "Download failed: " + url, e);
-            throw e;
-        }
+            HttpResponse<Path> response;
+            try {
+                response = client.send(request,
+                        HttpResponse.BodyHandlers.ofFile(
+                                target,
+                                StandardOpenOption.CREATE,
+                                StandardOpenOption.TRUNCATE_EXISTING
+                        ));
+            } catch (IOException | InterruptedException e) {
+                LOG.log(Level.SEVERE, "Download failed: " + url, e);
+                throw e;
+            }
 
-        if (response.statusCode() != 200) {
-            throw new IOException("HTTP " + response.statusCode() + " for " + url);
+            if (response.statusCode() != 200) {
+                throw new IOException("HTTP " + response.statusCode() + " for " + url);
+            }
         }
     }
 
