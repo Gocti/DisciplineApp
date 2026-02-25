@@ -2,7 +2,6 @@ package app;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
-import com.formdev.flatlaf.FlatSystemProperties;
 
 import javax.swing.*;
 import java.awt.*;
@@ -44,8 +43,50 @@ public final class MainApp {
         PREFS.put(KEY_THEME, mode.name());
     }
 
+    // ===================== SYSTEM DARK MODE =====================
+    private static boolean isSystemDarkMode() {
+        try {
+            // Windows 10/11 - читаем из реестра
+            if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+                ProcessBuilder processBuilder = new ProcessBuilder(
+                    "reg", "query",
+                    "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                    "/v", "AppsUseLightTheme"
+                );
+                Process process = processBuilder.start();
+                
+                java.util.Scanner scanner = new java.util.Scanner(process.getInputStream());
+                while (scanner.hasNextLine()) {
+                    String line = scanner.nextLine();
+                    if (line.contains("AppsUseLightTheme")) {
+                        // 0 = тёмная тема, 1 = светлая тема
+                        return line.trim().endsWith("0x0");
+                    }
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            // По умолчанию светлая тема
+            return false;
+        }
+    }
+    
+    /** Публичный метод для проверки системной темы */
+    public static boolean isCurrentThemeDark() {
+        ThemeMode mode = getThemeMode();
+        return switch (mode) {
+            case DARK -> true;
+            case LIGHT -> false;
+            case SYSTEM -> isSystemDarkMode();
+        };
+    }
+
     // ===================== LOOK & FEEL =====================
     public static void applyLookAndFeel() {
+        applyLookAndFeel(false);
+    }
+    
+    public static void applyLookAndFeel(boolean refreshWindows) {
         try {
             ThemeMode mode = getThemeMode();
 
@@ -53,18 +94,23 @@ public final class MainApp {
                 case DARK -> FlatDarkLaf.setup();
                 case LIGHT -> FlatLightLaf.setup();
                 case SYSTEM -> {
-                    boolean dark = FlatSystemProperties.getBoolean(
-                            "ui.dark.mode",
-                            false
-                    );
-                    if (dark) FlatDarkLaf.setup();
-                    else FlatLightLaf.setup();
+                    if (isSystemDarkMode()) {
+                        FlatDarkLaf.setup();
+                    } else {
+                        FlatLightLaf.setup();
+                    }
                 }
             }
 
+            // Применяем настройки после установки LaF
             UIManager.put("Component.scaleFactor", getScale());
             UIManager.put("@accentColor", getAccentColor());
             UIManager.put("defaultFont", getFontPref());
+            
+            // Обновляем все открытые окна без перезагрузки
+            for (Window w : Window.getWindows()) {
+                SwingUtilities.updateComponentTreeUI(w);
+            }
 
         } catch (Exception e) {
             FlatLightLaf.setup();
