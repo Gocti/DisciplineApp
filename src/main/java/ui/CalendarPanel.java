@@ -1,7 +1,6 @@
 package ui;
 
 import app.MainApp;
-import app.ThemeMode;
 import model.TaskEntry;
 import model.TaskModel;
 import model.TaskPriority;
@@ -34,9 +33,17 @@ public class CalendarPanel extends JPanel {
     private LocalDate weekStart;
     private JLabel title;
     private JButton todayBtn;
+    private JButton prevBtn;
+    private JButton nextBtn;
+    private JPanel headerPanel;
+    private JPanel weekRowPanel;
+    private JPanel todayRowPanel;
+    private JLabel cornerLabel;
 
     private JTable table;
+    private JTable rowHeaderTable;
     private DefaultTableModel model;
+    private DefaultTableModel rowHeaderModel;
 
     public CalendarPanel(TaskModel taskModel) {
         this.taskModel = taskModel;
@@ -62,19 +69,68 @@ public class CalendarPanel extends JPanel {
 
     public void refreshTheme() {
         applyTheme();
-        SwingUtilities.updateComponentTreeUI(this);
+        applyTableTheme();
+        
+        // Обновляем цвета заголовка таблицы
+        if (table != null && table.getTableHeader() != null) {
+            table.getTableHeader().setBackground(headerBg);
+            table.getTableHeader().setForeground(text);
+        }
+        
+        // Обновляем цвета таблицы заголовков строк
+        if (rowHeaderTable != null) {
+            rowHeaderTable.setBackground(bg);
+            rowHeaderTable.setForeground(text);
+            rowHeaderTable.getTableHeader().setBackground(headerBg);
+            rowHeaderTable.getTableHeader().setForeground(text);
+        }
+        
+        // Обновляем цвета панелей заголовка
+        if (headerPanel != null) headerPanel.setBackground(bg);
+        if (weekRowPanel != null) weekRowPanel.setBackground(bg);
+        if (todayRowPanel != null) todayRowPanel.setBackground(bg);
+        
+        // Обновляем цвета кнопок и заголовков
+        if (title != null) title.setForeground(text);
+        if (prevBtn != null) {
+            prevBtn.setBackground(headerBg);
+            prevBtn.setForeground(text);
+        }
+        if (nextBtn != null) {
+            nextBtn.setBackground(headerBg);
+            nextBtn.setForeground(text);
+        }
+        if (todayBtn != null) {
+            todayBtn.setBackground(headerBg);
+            todayBtn.setForeground(text);
+        }
+        
+        // Обновляем corner label
+        if (cornerLabel != null) {
+            cornerLabel.setBackground(headerBg);
+            cornerLabel.setForeground(text);
+        }
+        
+        // Обновляем шрифт
+        Font font = MainApp.getFontPref();
+        updateFontRecursively(this, font);
+        
+        // Обновляем все компоненты
+        revalidate();
         repaint();
+    }
+    
+    private void updateFontRecursively(Component c, Font f) {
+        c.setFont(f);
+        if (c instanceof Container cont) {
+            for (Component child : cont.getComponents()) {
+                updateFontRecursively(child, f);
+            }
+        }
     }
 
     private void applyTheme() {
-        ThemeMode mode = MainApp.getThemeMode();
-
-        boolean dark = switch (mode) {
-            case DARK -> true;
-            case LIGHT -> false;
-            case SYSTEM -> UIManager.getLookAndFeelDefaults()
-                    .getColor("Panel.background").getRed() < 128;
-        };
+        boolean dark = MainApp.isCurrentThemeDark();
 
         if (dark) {
             bg = new Color(45, 45, 48);
@@ -93,26 +149,26 @@ public class CalendarPanel extends JPanel {
 
     // ================= HEADER =================
     private void initHeader() {
-        JPanel header = new JPanel();
-        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-        header.setBackground(bg);
+        headerPanel = new JPanel();
+        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
+        headerPanel.setBackground(bg);
 
-        JPanel weekRow = new JPanel(new BorderLayout());
-        weekRow.setBackground(bg);
+        weekRowPanel = new JPanel(new BorderLayout());
+        weekRowPanel.setBackground(bg);
 
-        JButton prev = new JButton("Прошлая неделя");
-        JButton next = new JButton("Следующая неделя");
+        prevBtn = new JButton("Прошлая неделя");
+        nextBtn = new JButton("Следующая неделя");
 
         title = new JLabel("", SwingConstants.CENTER);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 16f));
         title.setForeground(text);
 
-        prev.addActionListener(e -> changeWeek(-1));
-        next.addActionListener(e -> changeWeek(1));
+        prevBtn.addActionListener(e -> changeWeek(-1));
+        nextBtn.addActionListener(e -> changeWeek(1));
 
-        weekRow.add(prev, BorderLayout.WEST);
-        weekRow.add(title, BorderLayout.CENTER);
-        weekRow.add(next, BorderLayout.EAST);
+        weekRowPanel.add(prevBtn, BorderLayout.WEST);
+        weekRowPanel.add(title, BorderLayout.CENTER);
+        weekRowPanel.add(nextBtn, BorderLayout.EAST);
 
         todayBtn = new JButton("Сегодня");
         todayBtn.addActionListener(e -> {
@@ -122,16 +178,16 @@ public class CalendarPanel extends JPanel {
             updateTodayButton();
         });
 
-        JPanel todayRow = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        todayRow.setBackground(bg);
-        todayRow.add(todayBtn);
+        todayRowPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        todayRowPanel.setBackground(bg);
+        todayRowPanel.add(todayBtn);
 
-        header.add(weekRow);
-        header.add(todayRow);
+        headerPanel.add(weekRowPanel);
+        headerPanel.add(todayRowPanel);
 
         updateTitle();
         updateTodayButton();
-        add(header, BorderLayout.NORTH);
+        add(headerPanel, BorderLayout.NORTH);
     }
 
     private void changeWeek(int delta) {
@@ -152,51 +208,118 @@ public class CalendarPanel extends JPanel {
 
     // ================= TABLE =================
     private void initTable() {
-        String[] cols = new String[DAYS.length + 1];
-        cols[0] = "Час";
-        System.arraycopy(DAYS, 0, cols, 1, DAYS.length);
+        // Основная таблица (дни недели)
+        String[] cols = new String[DAYS.length];
+        System.arraycopy(DAYS, 0, cols, 0, DAYS.length);
 
         model = new DefaultTableModel(cols, 24) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
 
-        for (int h = 0; h < 24; h++)
-            model.setValueAt(String.format("%02d", h), h, 0);
-
         table = new JTable(model);
         table.setRowHeight(34);
-        table.setDefaultRenderer(Object.class, new TaskCellRenderer());
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         table.setGridColor(grid);
         table.setShowGrid(true);
-
+        table.setDefaultRenderer(Object.class, new TaskCellRenderer());
+        table.getTableHeader().setReorderingAllowed(false);
+        
+        // Таблица заголовков строк (часы)
+        String[] rowHeaderCols = new String[] { "Час" };
+        rowHeaderModel = new DefaultTableModel(rowHeaderCols, 24) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        
+        // Заполняем часами 00:00 - 23:00
+        for (int h = 0; h < 24; h++) {
+            rowHeaderModel.setValueAt(String.format("%02d:00", h), h, 0);
+        }
+        
+        rowHeaderTable = new JTable(rowHeaderModel);
+        rowHeaderTable.setRowHeight(34);
+        rowHeaderTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        rowHeaderTable.getColumnModel().getColumn(0).setPreferredWidth(60);
+        rowHeaderTable.getColumnModel().getColumn(0).setMinWidth(60);
+        rowHeaderTable.getColumnModel().getColumn(0).setMaxWidth(60);
+        rowHeaderTable.setGridColor(grid);
+        rowHeaderTable.setShowGrid(true);
+        rowHeaderTable.getTableHeader().setReorderingAllowed(false);
+        
+        // Синхронизируем выделение и прокрутку
+        table.setSelectionModel(rowHeaderTable.getSelectionModel());
+        rowHeaderTable.setSelectionModel(table.getSelectionModel());
+        
+        // Синхронизируем прокрутку строк
+        table.addMouseWheelListener(e -> {
+            if (e.getWheelRotation() != 0) {
+                rowHeaderTable.getScrollableUnitIncrement(
+                    table.getVisibleRect(), SwingConstants.VERTICAL, 1);
+            }
+        });
+        
         applyTableTheme();
         addClickEditor();
         addContextMenu();
 
-        add(new JScrollPane(table), BorderLayout.CENTER);
+        // Заголовок для фиксированного столбца (пустой угол)
+        cornerLabel = new JLabel("Час", SwingConstants.CENTER);
+        cornerLabel.setOpaque(true);
+        cornerLabel.setBackground(headerBg);
+        cornerLabel.setForeground(text);
+        cornerLabel.setPreferredSize(new Dimension(60, 34));
+        cornerLabel.setFont(cornerLabel.getFont().deriveFont(Font.BOLD));
+
+        // Панель для заголовков
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.add(cornerLabel, BorderLayout.WEST);
+        headerPanel.add(table.getTableHeader(), BorderLayout.CENTER);
+
+        // Панель для таблиц
+        JPanel dataPanel = new JPanel(new BorderLayout());
+        dataPanel.add(rowHeaderTable, BorderLayout.WEST);
+        dataPanel.add(table, BorderLayout.CENTER);
+
+        JScrollPane scroll = new JScrollPane(dataPanel);
+        scroll.setColumnHeaderView(headerPanel);
+
+        add(scroll, BorderLayout.CENTER);
     }
 
     private void applyTableTheme() {
+        // Основная таблица
         table.setBackground(bg);
         table.setForeground(text);
         table.getTableHeader().setBackground(headerBg);
         table.getTableHeader().setForeground(text);
+        
+        // Таблица заголовков строк
+        if (rowHeaderTable != null) {
+            rowHeaderTable.setBackground(bg);
+            rowHeaderTable.setForeground(text);
+            rowHeaderTable.getTableHeader().setBackground(headerBg);
+            rowHeaderTable.getTableHeader().setForeground(text);
+        }
     }
 
     // ================= LOAD TASKS =================
     private void loadTasks() {
-        for (int r = 0; r < 24; r++)
-            for (int c = 1; c <= 7; c++)
+        // Очищаем основную таблицу (без столбца часов)
+        for (int r = 0; r < 24; r++) {
+            for (int c = 0; c < 7; c++) {
                 model.setValueAt(null, r, c);
+            }
+        }
 
+        // Заполняем задачами
         for (int d = 0; d < 7; d++) {
             LocalDate date = weekStart.plusDays(d);
             Map<String, TaskEntry> tasks = taskModel.getTasksForDate(date);
 
             for (int h = 0; h < 24; h++) {
                 String key = String.format("%02d", h);
-                if (tasks.containsKey(key))
-                    model.setValueAt(tasks.get(key), h, d + 1);
+                if (tasks.containsKey(key)) {
+                    model.setValueAt(tasks.get(key), h, d);
+                }
             }
         }
     }
@@ -254,16 +377,16 @@ public class CalendarPanel extends JPanel {
 
                 int r = table.rowAtPoint(e.getPoint());
                 int c = table.columnAtPoint(e.getPoint());
-                if (r < 0 || c <= 0) return;
+                if (r < 0 || c < 0) return;
                 if (model.getValueAt(r, c) != null) return;
 
-                String hour = (String) model.getValueAt(r, 0);
-                LocalDate date = weekStart.plusDays(c - 1);
+                String hour = String.format("%02d", r);
+                LocalDate date = weekStart.plusDays(c);
 
                 String text = JOptionPane.showInputDialog(
                         CalendarPanel.this,
                         "Введите задачу",
-                        DAYS[c - 1] + ", " + date + " — " + hour + ":00"
+                        DAYS[c] + ", " + date + " — " + hour + ":00"
                 );
 
                 if (text == null || text.isBlank()) return;
@@ -285,7 +408,7 @@ public class CalendarPanel extends JPanel {
         done.addActionListener(e -> {
             int r = table.getSelectedRow();
             int c = table.getSelectedColumn();
-            if (r < 0 || c <= 0) return;
+            if (r < 0 || c < 0) return;
 
             TaskEntry entry = (TaskEntry) model.getValueAt(r, c);
             if (entry != null) {
@@ -297,7 +420,7 @@ public class CalendarPanel extends JPanel {
         delete.addActionListener(e -> {
             int r = table.getSelectedRow();
             int c = table.getSelectedColumn();
-            if (r < 0 || c <= 0) return;
+            if (r < 0 || c < 0) return;
             model.setValueAt(null, r, c);
         });
 

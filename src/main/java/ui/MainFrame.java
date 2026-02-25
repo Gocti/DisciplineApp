@@ -18,9 +18,13 @@ public class MainFrame extends JFrame {
     private LocalDate currentDate = LocalDate.now();
 
     private TaskModel taskModel;
+    private JList<String> taskList;
+    private JTabbedPane tabs;
+    private CalendarPanel calendarPanel;
+    private SettingsPanel settingsPanel;
 
     public MainFrame() {
-        applyTheme();          // 🔹 ThemeMode используется тут
+        applyTheme();
         initFrame();
         initUi();
         loadTodayTasks();
@@ -29,17 +33,45 @@ public class MainFrame extends JFrame {
 
     // ================= THEME =================
     private void applyTheme() {
-        ThemeMode mode = MainApp.getThemeMode(); // ← использование ThemeMode
-        MainApp.applyLookAndFeel();
-
-        // если окно уже существует — обновляем UI
-        SwingUtilities.updateComponentTreeUI(this);
+        ThemeMode mode = MainApp.getThemeMode();
+        MainApp.applyLookAndFeel(false);
     }
 
     /** Вызывается из SettingsPanel */
     public void refreshTheme() {
-        applyTheme();
-        repaint();
+        MainApp.applyLookAndFeel(false);
+        
+        // Обновляем цвета всех компонентов
+        updateColorsRecursively(this);
+        
+        // Обновляем шрифт
+        Font font = MainApp.getFontPref();
+        updateFontRecursively(this, font);
+    }
+    
+    private void updateColorsRecursively(Component c) {
+        Color bg = UIManager.getColor("Panel.background");
+        Color fg = UIManager.getColor("Panel.foreground");
+        
+        if (c instanceof JComponent) {
+            c.setBackground(bg);
+            c.setForeground(fg);
+        }
+        
+        if (c instanceof Container cont) {
+            for (Component child : cont.getComponents()) {
+                updateColorsRecursively(child);
+            }
+        }
+    }
+    
+    private void updateFontRecursively(Component c, Font f) {
+        c.setFont(f);
+        if (c instanceof Container cont) {
+            for (Component child : cont.getComponents()) {
+                updateFontRecursively(child, f);
+            }
+        }
     }
 
     // ================= FRAME =================
@@ -60,10 +92,10 @@ public class MainFrame extends JFrame {
         dateLabel.setFont(dateLabel.getFont().deriveFont(Font.BOLD, 16f));
         dateLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 0, 0));
 
-        CalendarPanel calendarPanel = new CalendarPanel(taskModel);
-        SettingsPanel settingsPanel = new SettingsPanel(this, calendarPanel);
+        calendarPanel = new CalendarPanel(taskModel);
+        settingsPanel = new SettingsPanel(this, calendarPanel);
 
-        JTabbedPane tabs = new JTabbedPane();
+        tabs = new JTabbedPane();
         tabs.addTab("Задачи", createTasksPanel());
         tabs.addTab("Календарь", calendarPanel);
         tabs.addTab("Настройки", settingsPanel);
@@ -75,7 +107,7 @@ public class MainFrame extends JFrame {
     private JPanel createTasksPanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
 
-        JList<String> taskList = new JList<>(todayTasksModel);
+        taskList = new JList<>(todayTasksModel);
         JScrollPane scroll = new JScrollPane(taskList);
         scroll.setBorder(BorderFactory.createTitledBorder("Задачи на сегодня"));
 
