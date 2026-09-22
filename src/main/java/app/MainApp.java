@@ -2,12 +2,33 @@ package app;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import tools.jackson.databind.ObjectMapper;
 
 import javax.swing.*;
 import java.awt.*;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 
 public final class MainApp {
+
+    private static final Logger LOG =
+            Logger.getLogger(MainApp.class.getName());
+
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(5);
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(HTTP_TIMEOUT)
+            .build();
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private static final Preferences PREFS =
             Preferences.userRoot().node("DisciplineApp");
@@ -17,92 +38,102 @@ public final class MainApp {
     private static final String KEY_ACCENT = "accentColor";
     private static final String KEY_FONT_NAME = "fontName";
     private static final String KEY_FONT_SIZE = "fontSize";
-    private static final String KEY_VERSION = "version";
     private static final String CURRENT_VERSION = "1.0.0";
+
+    private static final String GITHUB_API_URL =
+            "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
+
+    private static final Duration UPDATE_CHECK_DELAY = Duration.ofSeconds(2);
+    private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(5);
 
     private MainApp() {}
 
     // ===================== ENTRY POINT =====================
-    static void main(String[] args) {
+    static void main() {
         SwingUtilities.invokeLater(() -> {
             applyLookAndFeel();
-            
-            // Создаём главное окно
-            ui.MainFrame frame = new ui.MainFrame();
+
+            var frame = new ui.MainFrame();
             frame.setVisible(true);
-            
-            // Проверяем обновления через 2 секунды после запуска
-            Timer checkUpdateTimer = new Timer(2000, e -> checkForUpdates(frame));
-            checkUpdateTimer.setRepeats(false);
-            checkUpdateTimer.start();
+
+            CompletableFuture.delayedExecutor(UPDATE_CHECK_DELAY.toSeconds(), TimeUnit.SECONDS).execute(
+                    () -> checkForUpdatesAsync(frame)
+            );
         });
     }
 
     /**
-     * Проверяет наличие обновлений
+     * Асинхронная проверка обновлений — выполняется в ForkJoinPool.
      */
-    private static void checkForUpdates(JFrame frame) {
-        try {
-            String savedVersion = PREFS.get(KEY_VERSION, CURRENT_VERSION);
-            
-            // Получаем последнюю версию из GitHub API
-            String latestVersion = getLatestVersionFromGitHub();
-            
-            if (latestVersion != null && !latestVersion.equals(savedVersion)) {
-                int result = JOptionPane.showConfirmDialog(
-                    frame,
-                    "Доступна новая версия: " + latestVersion + "\n" +
-                    "Текущая версия: " + savedVersion + "\n\n" +
-                    "Обновить приложение?",
-                    "Обновление доступно",
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.INFORMATION_MESSAGE
-                );
-                
-                if (result == JOptionPane.YES_OPTION) {
-                    String installerUrl = "https://github.com/Gocti/DisciplineApp/releases/latest/download/DisciplineApp-installer.exe";
-                    updater.UpdateManager.update(installerUrl);
-                }
-            }
-        } catch (Exception e) {
-            // Тихо игнорируем ошибки проверки обновлений
-        }
+    private static void checkForUpdatesAsync(JFrame frame) {
+        CompletableFuture.supplyAsync(MainApp::getLatestVersionFromGitHub)
+                .thenAccept(latestVersion -> {
+                    if (latestVersion == null) return;
+
+                    var currentVersion = getCurrentVersion();
+                    if (isNewerVersion(latestVersion, currentVersion)) {
+                        SwingUtilities.invokeLater(() -> {
+                            var result = JOptionPane.showConfirmDialog(
+                                frame,
+                                "Доступна новая версия: " + latestVersion + "\n" +
+                                "Текущая версия: " + currentVersion + "\n\n" +
+                                "Обновить приложение?",
+                                "Обновление доступно",
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.INFORMATION_MESSAGE
+                            );
+
+                            if (result == JOptionPane.YES_OPTION) {
+                                updater.UpdateManager.updateAsync(frame);
+                            }
+                        });
+                    }
+                })
+                .exceptionally(e -> {
+                    LOG.log(Level.WARNING, "Ошибка проверки обновлений", e);
+                    return null;
+                });
     }
-    
+
     /**
-     * Получает последнюю версию приложения из GitHub API
+     * Получает последнюю версию приложения из GitHub API через Jackson.
      */
     private static String getLatestVersionFromGitHub() {
         try {
-            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                    .connectTimeout(java.time.Duration.ofSeconds(5))
-                    .build();
-            
-            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create("https://api.github.com/repos/Gocti/DisciplineApp/releases/latest"))
+            var request = HttpRequest.newBuilder()
+                    .uri(URI.create(GITHUB_API_URL))
                     .header("Accept", "application/vnd.github.v3+json")
                     .header("User-Agent", "DisciplineApp")
                     .GET()
                     .build();
-            
-            java.net.http.HttpResponse<String> response = client.send(request,
-                    java.net.http.HttpResponse.BodyHandlers.ofString());
-            
+
+            var response = HTTP_CLIENT.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
             if (response.statusCode() == 200) {
-                String json = response.body();
-                // Парсим JSON вручную или через простой поиск
-                int tagStart = json.indexOf("\"tag_name\":\"");
-                if (tagStart >= 0) {
-                    tagStart += 12;
-                    int tagEnd = json.indexOf("\"", tagStart);
-                    if (tagEnd > tagStart) {
-                        return json.substring(tagStart, tagEnd);
+                var root = JSON.readTree(response.body());
+                var tagNode = root.get("tag_name");
+
+                if (tagNode != null) {
+                    @SuppressWarnings("deprecation")
+                    var text = tagNode.asText();
+
+                    if (text != null && !text.isEmpty()) {
+                        return normalizeVersion(text);
                     }
                 }
+
+                LOG.warning("Поле tag_name не найдено в ответе GitHub");
             }
-        } catch (Exception e) {
-            // Игнорируем ошибки
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception _) {
+            return null;
         }
+
         return null;
     }
 
@@ -112,7 +143,7 @@ public final class MainApp {
             return ThemeMode.valueOf(
                     PREFS.get(KEY_THEME, ThemeMode.SYSTEM.name())
             );
-        } catch (Exception e) {
+        } catch (Exception _) {
             return ThemeMode.SYSTEM;
         }
     }
@@ -123,35 +154,62 @@ public final class MainApp {
 
     // ===================== SYSTEM DARK MODE =====================
     private static boolean isSystemDarkMode() {
+        if (!System.getProperty("os.name").toLowerCase().contains("windows")) {
+            return false;
+        }
+        Process process = null;
         try {
-            // Windows 10/11 - читаем из реестра
-            if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-                ProcessBuilder processBuilder = new ProcessBuilder(
-                    "reg", "query",
+            var systemRoot = System.getenv("SystemRoot");
+            if (systemRoot == null || systemRoot.isBlank()) {
+                return false;
+            }
+
+            var processBuilder = new ProcessBuilder(
+                    systemRoot + "\\System32\\reg.exe",
+                    "query",
                     "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
                     "/v", "AppsUseLightTheme"
+            );
+
+            process = processBuilder.start();
+
+            var finished = process.waitFor(PROCESS_TIMEOUT);
+
+            if (!finished) {
+                process.destroyForcibly();
+                return false;
+            }
+
+            try (var is = process.getInputStream()) {
+                var output = new String(
+                        is.readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8
                 );
-                Process process = processBuilder.start();
-                
-                java.util.Scanner scanner = new java.util.Scanner(process.getInputStream());
-                while (scanner.hasNextLine()) {
-                    String line = scanner.nextLine();
+
+                for (var line : output.split("\r?\n")) {
                     if (line.contains("AppsUseLightTheme")) {
-                        // 0 = тёмная тема, 1 = светлая тема
                         return line.trim().endsWith("0x0");
                     }
                 }
             }
+
             return false;
-        } catch (Exception e) {
-            // По умолчанию светлая тема
+
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
             return false;
+        } catch (Exception _) {
+            return false;
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
         }
     }
-    
+
     /** Публичный метод для проверки системной темы */
     public static boolean isCurrentThemeDark() {
-        ThemeMode mode = getThemeMode();
+        var mode = getThemeMode();
         return switch (mode) {
             case DARK -> true;
             case LIGHT -> false;
@@ -161,12 +219,8 @@ public final class MainApp {
 
     // ===================== LOOK & FEEL =====================
     public static void applyLookAndFeel() {
-        applyLookAndFeel(false);
-    }
-    
-    public static void applyLookAndFeel(boolean refreshWindows) {
         try {
-            ThemeMode mode = getThemeMode();
+            var mode = getThemeMode();
 
             switch (mode) {
                 case DARK -> FlatDarkLaf.setup();
@@ -180,19 +234,56 @@ public final class MainApp {
                 }
             }
 
-            // Применяем настройки после установки LaF
-            UIManager.put("Component.scaleFactor", getScale());
+            var scale = Math.clamp(getScale(), 0.5, 2.0);
+            UIManager.put("Component.scaleFactor", scale);
             UIManager.put("@accentColor", getAccentColor());
             UIManager.put("defaultFont", getFontPref());
-            
-            // Обновляем все открытые окна без перезагрузки
+
             for (Window w : Window.getWindows()) {
                 SwingUtilities.updateComponentTreeUI(w);
             }
 
-        } catch (Exception e) {
+        } catch (Exception _) {
             FlatLightLaf.setup();
         }
+    }
+
+    private static boolean isNewerVersion(String latestVersion, String currentVersion) {
+        var latestParts = parseVersion(normalizeVersion(latestVersion));
+        var currentParts = parseVersion(normalizeVersion(currentVersion));
+        var length = Math.max(latestParts.length, currentParts.length);
+
+        for (int i = 0; i < length; i++) {
+            var latest = i < latestParts.length ? latestParts[i] : 0;
+            var current = i < currentParts.length ? currentParts[i] : 0;
+            if (latest != current) {
+                return latest > current;
+            }
+        }
+        return false;
+    }
+
+    private static int[] parseVersion(String version) {
+        return Arrays.stream(version.split("\\."))
+                .mapToInt(part -> {
+                    try {
+                        return Integer.parseInt(part);
+                    } catch (NumberFormatException _) {
+                        return 0;
+                    }
+                })
+                .toArray();
+    }
+
+    private static String normalizeVersion(String version) {
+        if (version == null) {
+            return CURRENT_VERSION;
+        }
+        var normalized = version.trim();
+        if (normalized.startsWith("v") || normalized.startsWith("V")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized.isEmpty() ? CURRENT_VERSION : normalized;
     }
 
     // ===================== SCALE =====================
@@ -201,7 +292,8 @@ public final class MainApp {
     }
 
     public static void setScale(double scale) {
-        PREFS.putDouble(KEY_SCALE, scale);
+        // Валидация при сохранении
+        PREFS.putDouble(KEY_SCALE, Math.clamp(scale, 0.5, 2.0));
     }
 
     // ===================== ACCENT COLOR =====================
@@ -222,18 +314,16 @@ public final class MainApp {
     }
 
     public static Font getFontPref() {
-        String name = PREFS.get(KEY_FONT_NAME, "Arial");
-        int size = PREFS.getInt(KEY_FONT_SIZE, 14);
+        var name = PREFS.get(KEY_FONT_NAME, "Arial");
+        var size = PREFS.getInt(KEY_FONT_SIZE, 14);
         return new Font(name, Font.PLAIN, size);
     }
 
     // ===================== VERSION =====================
     public static String getCurrentVersion() {
-        return PREFS.get(KEY_VERSION, CURRENT_VERSION);
+        var packageVersion = MainApp.class.getPackage().getImplementationVersion();
+        return normalizeVersion(packageVersion);
     }
 
-    public static void setVersion(String version) {
-        PREFS.put(KEY_VERSION, version);
-    }
+
 }
-

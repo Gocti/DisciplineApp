@@ -1,48 +1,29 @@
 package model;
 
-public class TaskEntry {
+import java.util.Objects;
 
-    private String text;
-    private TaskPriority priority;
-    private boolean done;
+/**
+ * Неизменяемая модель задачи.
+ * <p>
+ * Используется как объект доменного уровня и не зависит от UI,
+ * хранения данных или конкретной реализации интерфейса.
+ */
+public record TaskEntry(String text, TaskPriority priority, boolean done) {
+
+    public TaskEntry {
+        Objects.requireNonNull(text, "text must not be null");
+        Objects.requireNonNull(priority, "priority must not be null");
+    }
 
     public TaskEntry(String text, TaskPriority priority) {
-        this.text = text;
-        this.priority = priority;
-        this.done = false;
+        this(text, priority, false);
     }
 
-    // ===== getters =====
-    public String getText() {
-        return text;
+    public TaskEntry withDone(boolean done) {
+        return new TaskEntry(text, priority, done);
     }
 
-    public TaskPriority getPriority() {
-        return priority;
-    }
-
-    public boolean isDone() {
-        return done;
-    }
-
-    // ===== setters =====
-    public void setText(String text) {
-        this.text = text;
-    }
-
-    public void setPriority(TaskPriority priority) {
-        this.priority = priority;
-    }
-
-    public void setDone(boolean done) {
-        this.done = done;
-    }
-
-    // ===== важно для JTable =====
-    @Override
-    public String toString() {
-        return text;
+    public TaskEntry withText(String text) {
+        return new TaskEntry(text, priority, done);
     }
 }
-
-

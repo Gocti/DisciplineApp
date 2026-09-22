@@ -1,28 +1,36 @@
 package model;
 
+import repository.JsonTaskRepository;
+import repository.TaskRepository;
+
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.Map;
 
 public class TaskModel {
 
-    private final Map<LocalDate, Map<String, TaskEntry>> tasks = new HashMap<>();
+    private final TaskRepository repository;
 
-    public Map<String, TaskEntry> getTasksForDate(LocalDate date) {
-        return tasks.computeIfAbsent(date, d -> new HashMap<>());
+    public TaskModel() {
+        this(new JsonTaskRepository());
     }
 
-    public void setTask(LocalDate date, String key, TaskEntry entry) {
-        getTasksForDate(date).put(key, entry);
+    TaskModel(TaskRepository repository) {
+        this.repository = repository;
+    }
+
+    public Map<String, TaskEntry> getTasksForDate(LocalDate date) {
+        return repository.getTasksForDate(date);
     }
 
     public TaskEntry getTask(LocalDate date, String key) {
-        return getTasksForDate(date).get(key);
+        return repository.getTask(date, key);
+    }
+
+    public void setTask(LocalDate date, String key, TaskEntry entry) {
+        repository.setTask(date, key, entry);
     }
 
     public void removeTask(LocalDate date, String key) {
-        getTasksForDate(date).remove(key);
+        repository.removeTask(date, key);
     }
 }
-
-

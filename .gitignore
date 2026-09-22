@@ -1,9 +1,12 @@
+.build/
+.build/Debug.build.xml
+.build/Release.build.xml
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
-.kotlin
+!.kotlin
 
 ### IntelliJ IDEA ###
 .idea/

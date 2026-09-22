@@ -2,72 +2,41 @@ package ui;
 
 import app.MainApp;
 import app.ThemeMode;
-import security.ProgramBlocker;
 
 import javax.swing.*;
-import javax.swing.filechooser.FileSystemView;
 import java.awt.*;
 import java.awt.event.ActionListener;
-import java.io.File;
-import java.util.Collections;
-import java.util.List;
 
 public class SettingsPanel extends JPanel {
 
     private Color bg;
     private Color fg;
-    private final CalendarPanel calendar;
 
-    public SettingsPanel(JFrame parent, CalendarPanel calendar) {
-        this.calendar = calendar;
+    private final JPanel themePanel;
+
+    public SettingsPanel(CalendarPanel calendar, MainFrame mainFrame) {
 
         applyTheme();
+
         setLayout(new BorderLayout(12, 12));
         setBackground(bg);
-
-        // ================= BLOCKED PROGRAMS =================
-        DefaultListModel<String> programModel = new DefaultListModel<>();
-        JList<String> programList = new JList<>(programModel);
-        programList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        programList.setBackground(bg);
-        programList.setForeground(fg);
-
-        ProgramBlocker.getBlockedPrograms().forEach(programModel::addElement);
-
-        JScrollPane programScroll = new JScrollPane(programList);
-        programScroll.setBorder(BorderFactory.createTitledBorder("Блокируемые программы"));
-        programScroll.setBackground(bg);
-
-        JButton addProgramBtn = createAddProgramButton(programModel, parent);
-        addProgramBtn.setBackground(bg);
-        addProgramBtn.setForeground(fg);
-        JButton saveBlockedBtn = createSaveBlockedButton(programModel);
-        saveBlockedBtn.setBackground(bg);
-        saveBlockedBtn.setForeground(fg);
-
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        buttons.setBackground(bg);
-        buttons.add(addProgramBtn);
-        buttons.add(saveBlockedBtn);
-
-        JPanel blockPanel = new JPanel(new BorderLayout(5, 5));
-        blockPanel.setBackground(bg);
-        blockPanel.add(programScroll, BorderLayout.CENTER);
-        blockPanel.add(buttons, BorderLayout.SOUTH);
+        setForeground(fg);
 
         // ================= THEME =================
-        JRadioButton light = new JRadioButton("Светлая тема");
-        JRadioButton dark = new JRadioButton("Тёмная тема");
-        JRadioButton system = new JRadioButton("Тема системы");
+
+        var light = new JRadioButton("Светлая тема");
+        var dark = new JRadioButton("Тёмная тема");
+        var system = new JRadioButton("Тема системы");
 
         light.setBackground(bg);
         dark.setBackground(bg);
         system.setBackground(bg);
+
         light.setForeground(fg);
         dark.setForeground(fg);
         system.setForeground(fg);
 
-        ButtonGroup themeGroup = new ButtonGroup();
+        var themeGroup = new ButtonGroup();
         themeGroup.add(light);
         themeGroup.add(dark);
         themeGroup.add(system);
@@ -78,17 +47,17 @@ public class SettingsPanel extends JPanel {
             case SYSTEM -> system.setSelected(true);
         }
 
-        ActionListener themeListener = e -> {
-            if (light.isSelected()) MainApp.setThemeMode(ThemeMode.LIGHT);
-            else if (dark.isSelected()) MainApp.setThemeMode(ThemeMode.DARK);
-            else MainApp.setThemeMode(ThemeMode.SYSTEM);
+        ActionListener themeListener = _ -> {
 
-            // Обновляем тему без перезагрузки
-            MainApp.applyLookAndFeel(false);
-            
-            // Обновляем цвета в текущей панели
-            refreshTheme();
-            calendar.refreshTheme();
+            if (light.isSelected()) {
+                MainApp.setThemeMode(ThemeMode.LIGHT);
+            } else if (dark.isSelected()) {
+                MainApp.setThemeMode(ThemeMode.DARK);
+            } else {
+                MainApp.setThemeMode(ThemeMode.SYSTEM);
+            }
+
+            mainFrame.refreshTheme();
         };
 
         light.addActionListener(themeListener);
@@ -96,193 +65,233 @@ public class SettingsPanel extends JPanel {
         system.addActionListener(themeListener);
 
         // ================= CALENDAR =================
-        JCheckBox compactCalendar = new JCheckBox("Компактная таблица календаря");
+
+        var compactCalendar = new JCheckBox("Компактная таблица календаря");
+
         compactCalendar.setBackground(bg);
         compactCalendar.setForeground(fg);
-        compactCalendar.addActionListener(e ->
-                calendar.setCompactView(compactCalendar.isSelected())
+
+        compactCalendar.addActionListener(
+                _ -> calendar.setCompactView(
+                        compactCalendar.isSelected()
+                )
         );
 
         // ================= FONT =================
-        Font currentFont = MainApp.getFontPref();
 
-        JComboBox<String> fontBox = new JComboBox<>(
-                GraphicsEnvironment.getLocalGraphicsEnvironment()
-                        .getAvailableFontFamilyNames()
-        );
+        var currentFont = MainApp.getFontPref();
+
+        var availableFonts =
+                GraphicsEnvironment
+                        .getLocalGraphicsEnvironment()
+                        .getAvailableFontFamilyNames();
+
+        var fontBox = new JComboBox<>(availableFonts);
+
         fontBox.setBackground(bg);
         fontBox.setForeground(fg);
         fontBox.setSelectedItem(currentFont.getFamily());
 
-        JSpinner fontSize = new JSpinner(
-                new SpinnerNumberModel(currentFont.getSize(), 10, 28, 1)
+        var fontSize = new JSpinner(
+                new SpinnerNumberModel(
+                        currentFont.getSize(),
+                        10,
+                        28,
+                        1
+                )
         );
+
         fontSize.setBackground(bg);
         fontSize.setForeground(fg);
 
-        JButton applyFontBtn = createApplyFontButton(fontBox, fontSize);
+        var applyFontBtn =
+                createApplyFontButton(
+                        fontBox,
+                        fontSize
+                );
 
         // ================= RIGHT PANEL =================
-        JPanel themePanel = new JPanel(new GridLayout(0, 1, 6, 6));
+
+        themePanel =
+                new JPanel(
+                        new GridLayout(
+                                0,
+                                1,
+                                6,
+                                6
+                        )
+                );
+
         themePanel.setBackground(bg);
         themePanel.setForeground(fg);
-        themePanel.setBorder(BorderFactory.createTitledBorder("Оформление"));
+
+        updateThemePanelBorder();
 
         themePanel.add(light);
         themePanel.add(dark);
         themePanel.add(system);
-        themePanel.add(Box.createVerticalStrut(8));
+
+        themePanel.add(
+                Box.createVerticalStrut(8)
+        );
+
         themePanel.add(compactCalendar);
-        
-        JLabel fontLabel = new JLabel("Шрифт:");
+
+        var fontLabel = new JLabel("Шрифт:");
+
         fontLabel.setBackground(bg);
         fontLabel.setForeground(fg);
+
         themePanel.add(fontLabel);
-        
         themePanel.add(fontBox);
-        
-        JLabel sizeLabel = new JLabel("Размер:");
+
+        var sizeLabel = new JLabel("Размер:");
+
         sizeLabel.setBackground(bg);
         sizeLabel.setForeground(fg);
+
         themePanel.add(sizeLabel);
-        
         themePanel.add(fontSize);
         themePanel.add(applyFontBtn);
 
         // ================= LAYOUT =================
-        add(blockPanel, BorderLayout.CENTER);
-        add(themePanel, BorderLayout.EAST);
+
+        add(
+                themePanel,
+                BorderLayout.CENTER
+        );
     }
 
     // ================= THEME =================
 
     public void refreshTheme() {
-        // Сначала обновляем цвета bg и fg
-        boolean dark = MainApp.isCurrentThemeDark();
-        
-        bg = dark ? new Color(45, 45, 48) : Color.WHITE;
-        fg = dark ? Color.WHITE : Color.BLACK;
-        
-        // Обновляем цвета всех компонентов
-        updateColorsRecursively(this, bg, fg);
+
+        var dark = MainApp.isCurrentThemeDark();
+
+        bg = dark
+                ? ThemeColors.DARK_BG
+                : ThemeColors.LIGHT_BG;
+
+        fg = dark
+                ? ThemeColors.DARK_FG
+                : ThemeColors.LIGHT_FG;
+
+        setBackground(bg);
+        setForeground(fg);
+
+        ComponentUtils.updateColorsIteratively(
+                this,
+                bg,
+                fg
+        );
+
+        updateThemePanelBorder();
+
+        revalidate();
+        repaint();
     }
 
     private void applyTheme() {
-        ThemeMode mode = MainApp.getThemeMode();
 
-        boolean dark = MainApp.isCurrentThemeDark();
+        var dark = MainApp.isCurrentThemeDark();
 
-        bg = dark ? new Color(45, 45, 48) : Color.WHITE;
-        fg = dark ? Color.WHITE : Color.BLACK;
+        bg = dark
+                ? ThemeColors.DARK_BG
+                : ThemeColors.LIGHT_BG;
+
+        fg = dark
+                ? ThemeColors.DARK_FG
+                : ThemeColors.LIGHT_FG;
 
         setBackground(bg);
         setForeground(fg);
     }
 
-    // ================= HELPERS =================
+    private void updateThemePanelBorder() {
 
-    private JButton createSaveBlockedButton(DefaultListModel<String> model) {
-        JButton btn = new JButton("Сохранить блокировку");
+        if (themePanel == null) {
+            return;
+        }
+
+        var titledBorder =
+                BorderFactory.createTitledBorder(
+                        "Оформление"
+                );
+
+        titledBorder.setTitleColor(fg);
+
+        themePanel.setBorder(titledBorder);
+    }
+
+    // ================= FONT =================
+
+    private JButton createApplyFontButton(
+            JComboBox<String> fontBox,
+            JSpinner fontSize
+    ) {
+
+        var btn = new JButton(
+                "Применить шрифт"
+        );
+
         btn.setBackground(bg);
         btn.setForeground(fg);
-        btn.addActionListener(e -> saveModelToBlocker(model));
-        return btn;
-    }
 
-    private JButton createAddProgramButton(DefaultListModel<String> model, JFrame parent) {
-        JButton btn = new JButton("Добавить программу");
-        btn.setBackground(bg);
-        btn.setForeground(fg);
-        btn.addActionListener(e -> {
-            JFileChooser chooser = createExeFileChooser(parent);
-            if (chooser.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
-                File file = chooser.getSelectedFile();
-                if (file.exists() && file.canRead()) {
-                    String name = file.getName();
-                    if (!model.contains(name)) {
-                        model.addElement(name);
-                        saveModelToBlocker(model);
-                    }
-                }
-            }
-        });
-        return btn;
-    }
+        btn.addActionListener(_ -> {
 
-    private JFileChooser createExeFileChooser(JFrame parent) {
-        JFileChooser chooser = new JFileChooser(FileSystemView.getFileSystemView());
-        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        chooser.setFileFilter(new javax.swing.filechooser.FileFilter() {
-            @Override public boolean accept(File f) {
-                return f.isDirectory() || f.getName().toLowerCase().endsWith(".exe");
-            }
-            @Override public String getDescription() {
-                return "Executable files (*.exe)";
-            }
-        });
-        
-        // Применяем цвета для тёмной темы
-        if (fg == Color.WHITE) {
-            chooser.setBackground(bg);
-            chooser.setForeground(fg);
-        }
-        
-        return chooser;
-    }
+            var selectedName =
+                    (String) fontBox.getSelectedItem();
 
-    private void saveModelToBlocker(DefaultListModel<String> model) {
-        List<String> list = Collections.list(model.elements());
-        ProgramBlocker.setBlockedPrograms(list);
-        try {
-            ProgramBlocker.saveToJson(list);
-            JOptionPane.showMessageDialog(this, "Список блокировки сохранён");
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
-        }
-    }
+            if (selectedName == null
+                    || selectedName.isBlank()) {
 
-    private void updateFontRecursively(Component c, Font f) {
-        c.setFont(f);
-        if (c instanceof Container cont) {
-            for (Component child : cont.getComponents()) {
-                updateFontRecursively(child, f);
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Шрифт не выбран",
+                        "Ошибка",
+                        JOptionPane.WARNING_MESSAGE
+                );
+
+                return;
             }
-        }
-    }
-    
-    /** Обновляет цвета всех компонентов рекурсивно */
-    private void updateColorsRecursively(Component c, Color bg, Color fg) {
-        if (c instanceof JComponent) {
-            c.setBackground(bg);
-            c.setForeground(fg);
-        }
-        if (c instanceof Container cont) {
-            for (Component child : cont.getComponents()) {
-                updateColorsRecursively(child, bg, fg);
-            }
-        }
-    }
-    
-    /** Создаёт кнопку применения шрифта */
-    private JButton createApplyFontButton(JComboBox<String> fontBox, JSpinner fontSize) {
-        JButton btn = new JButton("Применить шрифт");
-        btn.setBackground(bg);
-        btn.setForeground(fg);
-        btn.addActionListener(e -> {
-            Font f = new Font(
-                    (String) fontBox.getSelectedItem(),
-                    Font.PLAIN,
-                    (int) fontSize.getValue()
+
+            var size =
+                    (int) fontSize.getValue();
+
+            var font =
+                    new Font(
+                            selectedName,
+                            Font.PLAIN,
+                            size
+                    );
+
+            // Применяем шрифт по умолчанию
+            // для новых компонентов.
+            UIManager.put(
+                    "defaultFont",
+                    font
             );
-            MainApp.setFont(f);
 
-            // Обновляем шрифт во всём приложении
-            updateFontRecursively(SwingUtilities.getWindowAncestor(this), f);
+            MainApp.setFont(font);
 
-            // Также обновляем шрифт по умолчанию для новых компонентов
-            UIManager.put("defaultFont", f);
+            // Применяем шрифт к уже созданному окну.
+            var window =
+                    SwingUtilities.getWindowAncestor(
+                            this
+                    );
+
+            if (window != null) {
+
+                ComponentUtils.updateFontIteratively(
+                        window,
+                        font
+                );
+
+                window.revalidate();
+                window.repaint();
+            }
         });
+
         return btn;
     }
 }
-

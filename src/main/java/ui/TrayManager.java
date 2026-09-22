@@ -1,10 +1,22 @@
 package ui;
 
+import app.MainApp;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.lang.ref.WeakReference;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class TrayManager {
+
+    private static final String APP_TITLE = "DisciplineApp";
+    private static final Logger LOG = Logger.getLogger(TrayManager.class.getName());
+
+    private static WeakReference<MainFrame> mainFrameRef;
+    private static TrayIcon trayIcon;
 
     private TrayManager() {}
 
@@ -12,68 +24,106 @@ public final class TrayManager {
         if (!SystemTray.isSupported())
             return;
 
-        SystemTray tray = SystemTray.getSystemTray();
+        // Guard: не устанавливаем трей повторно
+        if (trayIcon != null) return;
 
-        PopupMenu menu = new PopupMenu();
+        if (frame instanceof MainFrame mainFrame) {
+            mainFrameRef = new WeakReference<>(mainFrame);
+        }
 
-        MenuItem showItem = new MenuItem("Открыть");
-        MenuItem hideItem = new MenuItem("Скрыть");
-        MenuItem exitItem = new MenuItem("Выход");
+        var tray = SystemTray.getSystemTray();
+
+        var menu = new PopupMenu();
+
+        var showItem = new MenuItem("Открыть");
+        var hideItem = new MenuItem("Скрыть");
+        var exitItem = new MenuItem("Выход");
 
         menu.add(showItem);
         menu.add(hideItem);
         menu.addSeparator();
         menu.add(exitItem);
 
-        Image image = createTrayImage();
+        var image = createTrayImage();
 
-        TrayIcon icon = new TrayIcon(image, "Discipline App", menu);
-        icon.setImageAutoSize(true);
+        trayIcon = new TrayIcon(image, APP_TITLE, menu);
+        trayIcon.setImageAutoSize(true);
 
-        showItem.addActionListener(e ->
+        showItem.addActionListener(_ ->
                 SwingUtilities.invokeLater(() -> {
                     frame.setVisible(true);
                     frame.setState(Frame.NORMAL);
                     frame.toFront();
                 }));
 
-        hideItem.addActionListener(e ->
+        hideItem.addActionListener(_ ->
                 SwingUtilities.invokeLater(() ->
                         frame.setVisible(false)));
 
-        exitItem.addActionListener(e -> {
-            tray.remove(icon);
+        exitItem.addActionListener(_ -> {
+            tray.remove(trayIcon);
+            trayIcon = null;
+            performCleanup();
             System.exit(0);
         });
 
-        icon.addActionListener(e ->
+        trayIcon.addActionListener(_ ->
                 SwingUtilities.invokeLater(() -> {
                     frame.setVisible(true);
                     frame.toFront();
                 }));
 
         try {
-            tray.add(icon);
-        } catch (AWTException ignored) {
+            tray.add(trayIcon);
+        } catch (AWTException e) {
+            LOG.log(Level.WARNING, "Не удалось добавить иконку в трей", e);
+            trayIcon = null;
+        }
+    }
+
+    /** Показывает toast-уведомление при скрытии окна */
+    public static void notifyHidden() {
+        if (trayIcon != null) {
+            trayIcon.displayMessage(
+                    APP_TITLE,
+                    "Свернуто в трей",
+                    TrayIcon.MessageType.INFO
+            );
+        }
+    }
+
+    private static void performCleanup() {
+        var frame = mainFrameRef != null ? mainFrameRef.get() : null;
+        if (frame != null) {
+            frame.stopAllTimers();
         }
     }
 
     // ================= ICON =================
 
     private static Image createTrayImage() {
-        int size = 16;
-        BufferedImage img =
-                new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        var size = 16;
+        var img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
 
-        Graphics2D g = img.createGraphics();
-        g.setColor(new Color(60, 120, 200));
-        g.fillOval(0, 0, size - 1, size - 1);
+        var g = img.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-        g.setColor(Color.WHITE);
-        g.drawString("D", 4, 12);
+            g.setColor(MainApp.getAccentColor());
+            g.fillOval(0, 0, size - 1, size - 1);
 
-        g.dispose();
+            g.setColor(Color.WHITE);
+            g.setFont(g.getFont().deriveFont(Font.BOLD, 10f));
+            var fm = g.getFontMetrics();
+            var text = "D";
+            var x = (size - fm.stringWidth(text)) / 2;
+            var y = (size + fm.getAscent() - fm.getDescent()) / 2;
+            g.drawString(text, x, y);
+        } finally {
+            g.dispose();
+        }
+
         return img;
     }
 }
-
