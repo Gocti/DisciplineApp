@@ -17,7 +17,6 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CompletionException;
 
 public class CalendarPanel extends JPanel {
 
@@ -689,7 +688,7 @@ public class CalendarPanel extends JPanel {
                             pendingOperations.release(date, keys);
 
                             if (error != null) {
-                                showStorageError("сохранить задачу", error);
+                                StorageErrorDialog.show(this, "сохранить задачу", error);
                                 return;
                             }
 
@@ -824,10 +823,7 @@ public class CalendarPanel extends JPanel {
                             pendingOperations.release(date, keys);
 
                             if (error != null) {
-                                showStorageError(
-                                        "изменить статус задачи",
-                                        error
-                                );
+                                StorageErrorDialog.show(this, "изменить статус задачи", error);
                                 return;
                             }
 
@@ -890,7 +886,7 @@ public class CalendarPanel extends JPanel {
                             pendingOperations.release(date, keys);
 
                             if (error != null) {
-                                showStorageError("удалить задачу", error);
+                                StorageErrorDialog.show(this, "удалить задачу", error);
                                 return;
                             }
 
@@ -930,23 +926,4 @@ public class CalendarPanel extends JPanel {
         updateTodayButton();
         loadTasks();
     }
-
-
-    private void showStorageError(String action, Throwable error) {
-        var cause = error;
-
-        while (cause instanceof CompletionException
-                && cause.getCause() != null) {
-            cause = cause.getCause();
-        }
-
-        JOptionPane.showMessageDialog(
-                this,
-                "Не удалось " + action + ".\n\n"
-                        + cause.getMessage(),
-                "Ошибка хранилища",
-                JOptionPane.ERROR_MESSAGE
-        );
-    }
-
 }

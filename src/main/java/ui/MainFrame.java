@@ -6,6 +6,7 @@ import model.TaskModel;
 import model.TaskPriority;
 import model.PendingTaskOperations;
 
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
@@ -15,7 +16,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 import java.util.ArrayList;
-import java.util.concurrent.CompletionException;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -51,7 +51,7 @@ public class MainFrame extends JFrame {
 
     private boolean closing;
 
-    private final PendingTaskOperations pendingOperations;
+    private final transient PendingTaskOperations pendingOperations;
 
 
     public MainFrame(TaskModel taskModel) {
@@ -138,10 +138,7 @@ public class MainFrame extends JFrame {
                                     exitItem.setEnabled(true);
                                     glassPane.setVisible(false);
 
-                                    showStorageError(
-                                            "завершить приложение",
-                                            error
-                                    );
+                                    StorageErrorDialog.show(this, "завершить приложение", error);
                                     return;
                                 }
 
@@ -355,7 +352,7 @@ public class MainFrame extends JFrame {
                             taskList.setEnabled(true);
 
                             if (error != null) {
-                                showStorageError("удалить задачу", error);
+                                StorageErrorDialog.show(this, "удалить задачу", error);
                                 return;
                             }
 
@@ -367,27 +364,6 @@ public class MainFrame extends JFrame {
                         })
                 );
     }
-
-
-    // ================= Storage Error =================
-
-    private void showStorageError(String action, Throwable error) {
-        var cause = error;
-
-        while (cause instanceof CompletionException
-                && cause.getCause() != null) {
-            cause = cause.getCause();
-        }
-
-        JOptionPane.showMessageDialog(
-                this,
-                "Не удалось " + action + ".\n\n"
-                        + cause.getMessage(),
-                "Ошибка хранилища",
-                JOptionPane.ERROR_MESSAGE
-        );
-    }
-
 
     // ================= DATE WATCHER =================
     private void startDateWatcher() {
@@ -776,7 +752,7 @@ public class MainFrame extends JFrame {
                             pendingOperations.release(date, keys);
 
                             if (error != null) {
-                                showStorageError("сохранить задачу", error);
+                                StorageErrorDialog.show(this, "сохранить задачу", error);
                                 return;
                             }
 
