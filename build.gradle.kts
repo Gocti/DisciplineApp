@@ -28,8 +28,8 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 // Dependency versions
-val flatlafVersion = "3.7.2"
-val jacksonVersion = "3.2.2"
+val flatlafVersion = "3.8"
+val jacksonVersion = "3.3.0"
 val jetbrainsAnnotationsVersion = "26.1.0"
 
 dependencies {
@@ -82,7 +82,7 @@ fun Exec.configureJpackage(type: String) {
         "--win-per-user-install",
         "--app-version", version.toString(),
         "--vendor", "DisciplineApp",
-        "--description", "Application for blocking programs and task planning",
+        "--description", "Task planning and personal productivity",
         "--output", "${layout.buildDirectory.get().asFile}/installers"
     )
 

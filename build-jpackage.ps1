@@ -73,7 +73,7 @@ $args = @(
     "--win-menu",
     "--win-shortcut",
     "--vendor", "DisciplineApp",
-    "--description", "Application for blocking programs and task planning",
+    "--description", "Task planning and personal productivity",
     "--dest", $OUTPUT_DIR,
     "--verbose"
 )

@@ -29,6 +29,9 @@ public class CalendarPanel extends JPanel {
     private static final int REMINDER_INTERVAL_MS = 60_000;
     private static final int MAX_TASK_TEXT_LENGTH = 200;
 
+    private static final String ACTION_COMPLETE = "Выполнить";
+    private static final String ACTION_UNDO = "Вернуть";
+
     private static final String[] DAYS = {
             "Понедельник", "Вторник", "Среда",
             "Четверг", "Пятница", "Суббота", "Воскресенье"
@@ -443,6 +446,12 @@ public class CalendarPanel extends JPanel {
             )) {
                 setText(text1);
 
+                if (priority == TaskPriority.IMPORTANT) {
+                    setFont(getFont().deriveFont(Font.BOLD));
+                } else {
+                    setFont(getFont().deriveFont(Font.PLAIN));
+                }
+
                 if (done) {
                     setBackground(doneColor);
                 } else if (priority == TaskPriority.IMPORTANT) {
@@ -450,6 +459,7 @@ public class CalendarPanel extends JPanel {
                 }
             } else {
                 setText("");
+                setFont(getFont().deriveFont(Font.PLAIN));
             }
 
             return this;
@@ -471,40 +481,162 @@ public class CalendarPanel extends JPanel {
         table.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getButton() != MouseEvent.BUTTON1) return;
-                if (e.getClickCount() < 2) return;
-
-                var r = table.rowAtPoint(e.getPoint());
-                var c = table.columnAtPoint(e.getPoint());
-                if (r < 0 || c < 0) return;
-
-                var hour = String.format("%02d", r);
-                var date = weekStart.plusDays(c);
-                var existing = (TaskEntry) model.getValueAt(r, c);
-
-                var rawInput = JOptionPane.showInputDialog(
-                        CalendarPanel.this,
-                        "Введите задачу",
-                        DAYS[c] + ", " + date + " — " + hour + ":00",
-                        JOptionPane.PLAIN_MESSAGE,
-                        null, null,
-                        existing != null ? existing.text() : ""
-                );
-
-                if (!(rawInput instanceof String input) || input.isBlank()) {
+                if (e.getButton() != MouseEvent.BUTTON1) {
                     return;
                 }
 
-                handleTaskInput(r, c, input, existing);
+                if (e.getClickCount() < 2) {
+                    return;
+                }
+
+                var r = table.rowAtPoint(e.getPoint());
+                var c = table.columnAtPoint(e.getPoint());
+
+                if (r < 0 || c < 0) {
+                    return;
+                }
+
+                var existing = (TaskEntry) model.getValueAt(r, c);
+
+                showEditTaskDialog(
+                        r,
+                        c,
+                        existing
+                );
             }
         });
     }
 
-    private void handleTaskInput(
+    private void showEditTaskDialog(
+            int row,
+            int column,
+            TaskEntry existing
+    ) {
+        var dialog = new JDialog(
+                SwingUtilities.getWindowAncestor(this),
+                "Редактировать задачу",
+                Dialog.ModalityType.APPLICATION_MODAL
+        );
+
+        dialog.setSize(400, 180);
+        dialog.setLocationRelativeTo(this);
+
+        var taskNameField = new JTextField(
+                existing != null ? existing.text() : ""
+        );
+
+        var priorityBox = new JComboBox<>(
+                new String[]{"Обычная", "Важная"}
+        );
+
+        if (existing != null
+                && existing.priority() == TaskPriority.IMPORTANT) {
+            priorityBox.setSelectedIndex(1);
+        }
+
+        var saveButton = new JButton("Сохранить");
+        var cancelButton = new JButton("Отмена");
+
+        saveButton.addActionListener(_ -> {
+            var input = taskNameField.getText().trim();
+
+            if (input.isEmpty()) {
+                JOptionPane.showMessageDialog(
+                        dialog,
+                        "Пожалуйста, заполните название задачи.",
+                        "Ошибка",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+
+            var priority = priorityBox.getSelectedIndex() == 1
+                    ? TaskPriority.IMPORTANT
+                    : TaskPriority.NORMAL;
+
+            if (handleTaskInput(
+                    row,
+                    column,
+                    input,
+                    existing,
+                    priority
+            )) {
+                dialog.dispose();
+            }
+        });
+
+        cancelButton.addActionListener(_ -> dialog.dispose());
+
+        var mainPanel = new JPanel(new GridBagLayout());
+        var gbc = new GridBagConstraints();
+
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+
+        mainPanel.add(
+                new JLabel("Название:"),
+                gbc
+        );
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+
+        mainPanel.add(
+                taskNameField,
+                gbc
+        );
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+
+        mainPanel.add(
+                new JLabel("Приоритет:"),
+                gbc
+        );
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+
+        mainPanel.add(
+                priorityBox,
+                gbc
+        );
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        gbc.anchor = GridBagConstraints.CENTER;
+
+        var buttonPanel = new JPanel(
+                new FlowLayout(FlowLayout.CENTER)
+        );
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+
+        mainPanel.add(
+                buttonPanel,
+                gbc
+        );
+
+        dialog.add(mainPanel);
+        dialog.setVisible(true);
+    }
+
+    private boolean handleTaskInput(
             int row,
             int column,
             String input,
-            TaskEntry existing
+            TaskEntry existing,
+            TaskPriority priority
     ) {
         if (input.length() > MAX_TASK_TEXT_LENGTH) {
             JOptionPane.showMessageDialog(
@@ -514,65 +646,150 @@ public class CalendarPanel extends JPanel {
                     "Ошибка",
                     JOptionPane.WARNING_MESSAGE
             );
-            return;
+            return false;
         }
 
         var hour = String.format("%02d", row);
         var date = weekStart.plusDays(column);
 
         var entry = existing != null
-                ? existing.withText(input)
-                : new TaskEntry(input, TaskPriority.NORMAL);
+                ? new TaskEntry(
+                input,
+                priority,
+                existing.done()
+        )
+                : new TaskEntry(
+                input,
+                priority
+        );
 
         model.setValueAt(entry, row, column);
         taskModel.setTask(date, hour, entry);
         notifyTaskChanged();
+
+        return true;
     }
 
     // ================= CONTEXT MENU =================
     private void addContextMenu() {
         var menu = new JPopupMenu();
 
-        var done = new JMenuItem("Выполнено");
+        var toggleDone = new JMenuItem(ACTION_COMPLETE);
         var delete = new JMenuItem("Удалить");
 
-        done.addActionListener(_ -> {
-            var r = table.getSelectedRow();
-            var c = table.getSelectedColumn();
-            if (r < 0 || c < 0) return;
+        menu.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(
+                    javax.swing.event.PopupMenuEvent e
+            ) {
+                updateToggleDoneAction(toggleDone);
+            }
 
-            var entry = (TaskEntry) model.getValueAt(r, c);
-            if (entry != null) {
-                var date = weekStart.plusDays(c);
-                var key = String.format("%02d", r);
-                taskModel.setTask(date, key, entry.withDone(true));
-                model.setValueAt(entry.withDone(true), r, c);
-                notifyTaskChanged();
+            @Override
+            public void popupMenuWillBecomeInvisible(
+                    javax.swing.event.PopupMenuEvent e
+            ) {
+                // Required by PopupMenuListener; no action is needed here.
+            }
+
+            @Override
+            public void popupMenuCanceled(
+                    javax.swing.event.PopupMenuEvent e
+            ) {
+                // Required by PopupMenuListener; no action is needed here.
             }
         });
 
-        delete.addActionListener(_ -> {
-            var r = table.getSelectedRow();
-            var c = table.getSelectedColumn();
-            if (r < 0 || c < 0) return;
+        toggleDone.addActionListener(_ -> toggleTaskDone());
 
-            var confirm = JOptionPane.showConfirmDialog(
-                    this, "Удалить задачу?", "Подтверждение",
-                    JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE
-            );
-            if (confirm != JOptionPane.YES_OPTION) return;
+        delete.addActionListener(_ -> deleteSelectedTask());
 
-            model.setValueAt(null, r, c);
-
-            var date = weekStart.plusDays(c);
-            var key = String.format("%02d", r);
-            taskModel.removeTask(date, key);
-            notifyTaskChanged();
-        });
-
-        menu.add(done);
+        menu.add(toggleDone);
         menu.add(delete);
+
         table.setComponentPopupMenu(menu);
+    }
+
+    private void updateToggleDoneAction(JMenuItem toggleDone) {
+        var entry = getSelectedTask();
+
+        if (entry == null) {
+            toggleDone.setEnabled(false);
+            toggleDone.setText(ACTION_COMPLETE);
+            return;
+        }
+
+        toggleDone.setEnabled(true);
+        toggleDone.setText(
+                entry.done()
+                        ? ACTION_UNDO
+                        : ACTION_COMPLETE
+        );
+    }
+
+    private TaskEntry getSelectedTask() {
+        var r = table.getSelectedRow();
+        var c = table.getSelectedColumn();
+
+        if (r < 0 || c < 0) {
+            return null;
+        }
+
+        return (TaskEntry) model.getValueAt(r, c);
+    }
+
+    private void toggleTaskDone() {
+        var r = table.getSelectedRow();
+        var c = table.getSelectedColumn();
+
+        if (r < 0 || c < 0) {
+            return;
+        }
+
+        var entry = (TaskEntry) model.getValueAt(r, c);
+
+        if (entry == null) {
+            return;
+        }
+
+        var updatedEntry = entry.withDone(!entry.done());
+
+        var date = weekStart.plusDays(c);
+        var key = String.format("%02d", r);
+
+        taskModel.setTask(date, key, updatedEntry);
+        model.setValueAt(updatedEntry, r, c);
+
+        notifyTaskChanged();
+    }
+
+    private void deleteSelectedTask() {
+        var r = table.getSelectedRow();
+        var c = table.getSelectedColumn();
+
+        if (r < 0 || c < 0) {
+            return;
+        }
+
+        var confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Удалить задачу?",
+                "Подтверждение",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+        );
+
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        model.setValueAt(null, r, c);
+
+        var date = weekStart.plusDays(c);
+        var key = String.format("%02d", r);
+
+        taskModel.removeTask(date, key);
+        notifyTaskChanged();
     }
 
     // ================= TASK CHANGE CALLBACK =================

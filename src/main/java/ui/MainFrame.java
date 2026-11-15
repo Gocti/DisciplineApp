@@ -10,19 +10,21 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 
 import org.jetbrains.annotations.NotNull;
-import java.time.ZoneId;
+
 
 public class MainFrame extends JFrame {
 
     private static final int HOURS_COUNT = 24;
     private static final String APP_TITLE = "DisciplineApp";
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     /** Связь между отображаемым элементом и ключами задач */
-    private record TaskInfo(String displayText, String keys) {
-
+    private record TaskInfo(String displayText, String keys, TaskPriority priority) {
         @Override
         @NotNull
         public String toString() {
@@ -114,7 +116,7 @@ public class MainFrame extends JFrame {
 
         taskModel = new TaskModel();
 
-        dateLabel = new JLabel("Сегодня: " + currentDate);
+        dateLabel = new JLabel("Сегодня: " + currentDate.format(DATE_FORMAT));
         dateLabel.setFont(dateLabel.getFont().deriveFont(Font.BOLD, 16f));
         dateLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 0, 0));
 
@@ -150,6 +152,36 @@ public class MainFrame extends JFrame {
         panel.add(buttonPanel, BorderLayout.SOUTH);
 
         taskList = new JList<>(todayTasksModel);
+        taskList.setCellRenderer((list, value, _, selected, _) -> {
+            var text = value.displayText();
+
+            if (value.priority() == TaskPriority.IMPORTANT) {
+                text = "★ " + text;
+            }
+
+            var label = new JLabel(text);
+
+            label.setOpaque(true);
+            label.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
+
+            if (selected) {
+                label.setBackground(list.getSelectionBackground());
+                label.setForeground(list.getSelectionForeground());
+            } else {
+                label.setBackground(list.getBackground());
+                label.setForeground(list.getForeground());
+            }
+
+            var font = label.getFont();
+
+            if (value.priority() == TaskPriority.IMPORTANT) {
+                label.setFont(font.deriveFont(Font.BOLD));
+            } else {
+                label.setFont(font.deriveFont(Font.PLAIN));
+            }
+
+            return label;
+        });
         var scroll = new JScrollPane(taskList);
         scroll.getViewport().setBackground(UIManager.getColor("Panel.background"));
         scroll.setBorder(BorderFactory.createTitledBorder("Задачи на " + formatDate(selectedDate)));
@@ -172,23 +204,17 @@ public class MainFrame extends JFrame {
         prevDayBtn.setToolTipText("Предыдущий день");
         prevDayBtn.addActionListener(_ -> changeSelectedDate(-1));
 
-        var yesterdayBtn = new JButton("Вчера");
-        yesterdayBtn.addActionListener(_ -> setSelectedDate(LocalDate.now(SYSTEM_ZONE).minusDays(1)));
-
         var todayBtn = new JButton("Сегодня");
-        todayBtn.addActionListener(_ -> setSelectedDate(LocalDate.now(SYSTEM_ZONE)));
-
-        var tomorrowBtn = new JButton("Завтра");
-        tomorrowBtn.addActionListener(_ -> setSelectedDate(LocalDate.now(SYSTEM_ZONE).plusDays(1)));
+        todayBtn.addActionListener(_ ->
+                setSelectedDate(LocalDate.now(SYSTEM_ZONE))
+        );
 
         var nextDayBtn = new JButton(">");
         nextDayBtn.setToolTipText("Следующий день");
         nextDayBtn.addActionListener(_ -> changeSelectedDate(1));
 
         navPanel.add(prevDayBtn);
-        navPanel.add(yesterdayBtn);
         navPanel.add(todayBtn);
-        navPanel.add(tomorrowBtn);
         navPanel.add(nextDayBtn);
 
         return navPanel;
@@ -205,23 +231,37 @@ public class MainFrame extends JFrame {
     }
 
     private void updateTasksPanelBorder() {
-        if (taskList != null && taskList.getParent() instanceof JScrollPane scroll) {
-            scroll.setBorder(BorderFactory.createTitledBorder("Задачи на " + formatDate(selectedDate)));
+        if (taskList != null
+                && taskList.getParent() instanceof JViewport viewport
+                && viewport.getParent() instanceof JScrollPane scroll) {
+
+            scroll.setBorder(
+                    BorderFactory.createTitledBorder(
+                            "Задачи на " + formatDate(selectedDate)
+                    )
+            );
+
             scroll.revalidate();
+            scroll.repaint();
         }
     }
 
     private String formatDate(LocalDate date) {
         var today = LocalDate.now(SYSTEM_ZONE);
+
         if (date.equals(today)) {
             return "сегодня";
-        } else if (date.equals(today.minusDays(1))) {
-            return "вчера";
-        } else if (date.equals(today.plusDays(1))) {
-            return "завтра";
-        } else {
-            return date.toString();
         }
+
+        if (date.equals(today.minusDays(1))) {
+            return "вчера";
+        }
+
+        if (date.equals(today.plusDays(1))) {
+            return "завтра";
+        }
+
+        return date.format(DATE_FORMAT);
     }
 
     private void deleteSelectedTask() {
@@ -273,12 +313,14 @@ public class MainFrame extends JFrame {
         todayTasksModel.clear();
 
         var map = taskModel.getTasksForDate(selectedDate);
+
         if (map.isEmpty()) {
             updateTasksPanelBorder();
             return;
         }
 
         String lastText = null;
+        TaskPriority lastPriority = null;
         var startHour = -1;
         var lastKeys = new ArrayList<String>();
 
@@ -289,102 +331,335 @@ public class MainFrame extends JFrame {
             if (entry != null && lastText == null) {
                 startHour = h;
                 lastText = entry.text();
+                lastPriority = entry.priority();
                 lastKeys.add(key);
-            } else if (entry != null && entry.text().equals(lastText)) {
+
+            } else if (entry != null
+                    && entry.text().equals(lastText)
+                    && entry.priority() == lastPriority) {
+
                 lastKeys.add(key);
+
             } else if (lastText != null) {
-                var display = String.format("%02d–%02d (%d ч) — %s",
-                        startHour, h, h - startHour, lastText);
-                todayTasksModel.addElement(new TaskInfo(display, String.join(",", lastKeys)));
+                var display = String.format(
+                        "%02d–%02d (%d ч) — %s",
+                        startHour,
+                        h,
+                        h - startHour,
+                        lastText
+                );
+
+                todayTasksModel.addElement(
+                        new TaskInfo(
+                                display,
+                                String.join(",", lastKeys),
+                                lastPriority
+                        )
+                );
+
+                startHour = -1;
                 lastText = null;
+                lastPriority = null;
                 lastKeys.clear();
+
+                if (entry != null) {
+                    startHour = h;
+                    lastText = entry.text();
+                    lastPriority = entry.priority();
+                    lastKeys.add(key);
+                }
             }
         }
 
-        // Flush last task
         if (lastText != null) {
-            var display = String.format("%02d–%02d (%d ч) — %s",
-                    startHour, HOURS_COUNT, HOURS_COUNT - startHour, lastText);
-            todayTasksModel.addElement(new TaskInfo(display, String.join(",", lastKeys)));
+            var display = String.format(
+                    "%02d–%02d (%d ч) — %s",
+                    startHour,
+                    HOURS_COUNT,
+                    HOURS_COUNT - startHour,
+                    lastText
+            );
+
+            todayTasksModel.addElement(
+                    new TaskInfo(
+                            display,
+                            String.join(",", lastKeys),
+                            lastPriority
+                    )
+            );
         }
 
-        // Обновляем заголовок панели задач
         updateTasksPanelBorder();
     }
 
     private void showAddTaskDialog() {
-        // Диалоговое окно для добавления задачи
-        JDialog dialog = new JDialog(this, "Добавить задачу", Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setSize(400, 200);
+        var dialog = new JDialog(
+                this,
+                "Добавить задачу",
+                Dialog.ModalityType.APPLICATION_MODAL
+        );
+
+        dialog.setSize(400, 300);
         dialog.setLocationRelativeTo(this);
 
-        // Элементы формы
-        JTextField taskNameField = new JTextField();
+        var taskNameField = new JTextField();
+
         var hourValues = new String[HOURS_COUNT];
         for (int hour = 0; hour < HOURS_COUNT; hour++) {
             hourValues[hour] = String.format("%02d:00", hour);
         }
-        JComboBox<String> taskHourBox = new JComboBox<>(hourValues);
+
+        var taskHourBox = new JComboBox<>(hourValues);
         taskHourBox.setSelectedItem("09:00");
-        JButton addButton = new JButton("Добавить");
-        JButton cancelButton = new JButton("Отмена");
 
-        // Обработчик кнопки добавления
+        var intervalCheckBox = new JCheckBox("Выбрать интервал");
+
+        var priorityBox = new JComboBox<>(new String[]{"Обычная", "Важная"});
+
+        var startHourBox = new JComboBox<>(hourValues);
+        startHourBox.setSelectedItem("09:00");
+
+        var endHourBox = new JComboBox<>(hourValues);
+        endHourBox.setSelectedItem("10:00");
+
+        startHourBox.setEnabled(false);
+        endHourBox.setEnabled(false);
+
+        intervalCheckBox.addActionListener(_ -> {
+            var intervalSelected = intervalCheckBox.isSelected();
+
+            taskHourBox.setEnabled(!intervalSelected);
+            startHourBox.setEnabled(intervalSelected);
+            endHourBox.setEnabled(intervalSelected);
+        });
+
+        var addButton = new JButton("Добавить");
+        var cancelButton = new JButton("Отмена");
+
         addButton.addActionListener(_ -> {
-            String taskName = taskNameField.getText().trim();
-
-            if (taskName.isEmpty()) {
-                JOptionPane.showMessageDialog(dialog, "Пожалуйста, заполните все поля.",
-                        "Ошибка", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            // Создаем задачу для выбранной даты
-            var taskKey = String.format("%02d", taskHourBox.getSelectedIndex());
-            var taskEntry = new TaskEntry(taskName, TaskPriority.NORMAL);
-            taskModel.setTask(selectedDate, taskKey, taskEntry);
-
-            // Закрываем диалог
-            dialog.dispose();
-
-            // Обновляем список задач и календарь
-            loadTasksForSelectedDate();
-            calendarPanel.loadTasks();
-
-            // Если выбранная дата не входит в текущую неделю календаря, переключаем календарь на эту неделю
-            var calendarWeekStart = calendarPanel.getWeekStart();
-            if (selectedDate.isBefore(calendarWeekStart) || selectedDate.isAfter(calendarWeekStart.plusDays(6))) {
-                var newWeekStart = selectedDate.with(java.time.DayOfWeek.MONDAY);
-                calendarPanel.setWeekStart(newWeekStart);
-                calendarPanel.loadTasks();
+            if (addTask(
+                    dialog,
+                    taskNameField,
+                    taskHourBox,
+                    intervalCheckBox,
+                    priorityBox,
+                    startHourBox,
+                    endHourBox
+            )) {
+                dialog.dispose();
+                refreshTaskViews();
             }
         });
 
-        // Обработчик кнопки отмены
         cancelButton.addActionListener(_ -> dialog.dispose());
 
-        // Основная панель диалога
-        JPanel mainPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
+        var mainPanel = new JPanel(new GridBagLayout());
+        var gbc = new GridBagConstraints();
+
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.anchor = GridBagConstraints.WEST;
 
-        gbc.gridx = 0; gbc.gridy = 0;
-        mainPanel.add(new JLabel("Название задачи:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
-        mainPanel.add(taskNameField, gbc);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        mainPanel.add(
+                new JLabel("Название задачи:"),
+                gbc
+        );
 
-        gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
-        mainPanel.add(new JLabel("Час задачи:"), gbc);
-        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
-        mainPanel.add(taskHourBox, gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        mainPanel.add(
+                taskNameField,
+                gbc
+        );
 
-        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        mainPanel.add(
+                new JLabel("Час задачи:"),
+                gbc
+        );
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        mainPanel.add(
+                taskHourBox,
+                gbc
+        );
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+
+        mainPanel.add(
+                new JLabel("Приоритет:"),
+                gbc
+        );
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+
+        mainPanel.add(
+                priorityBox,
+                gbc
+        );
+
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        mainPanel.add(
+                intervalCheckBox,
+                gbc
+        );
+
+        gbc.gridy = 4;
+        gbc.gridwidth = 1;
+        gbc.anchor = GridBagConstraints.WEST;
+        mainPanel.add(
+                new JLabel("Начало:"),
+                gbc
+        );
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        mainPanel.add(
+                startHourBox,
+                gbc
+        );
+
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        gbc.fill = GridBagConstraints.NONE;
+        mainPanel.add(
+                new JLabel("Конец:"),
+                gbc
+        );
+
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        mainPanel.add(
+                endHourBox,
+                gbc
+        );
+
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.CENTER;
-        mainPanel.add(createDialogButtonPanel(addButton, cancelButton), gbc);
+        mainPanel.add(
+                createDialogButtonPanel(addButton, cancelButton),
+                gbc
+        );
 
         dialog.add(mainPanel);
         dialog.setVisible(true);
+    }
+
+    private boolean addTask(
+            JDialog dialog,
+            JTextField taskNameField,
+            JComboBox<String> taskHourBox,
+            JCheckBox intervalCheckBox,
+            JComboBox<String> priorityBox,
+            JComboBox<String> startHourBox,
+            JComboBox<String> endHourBox
+    ) {
+        var taskName = taskNameField.getText().trim();
+
+        if (taskName.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    dialog,
+                    "Пожалуйста, заполните название задачи.",
+                    "Ошибка",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return false;
+        }
+
+        var priority = priorityBox.getSelectedIndex() == 1
+                ? TaskPriority.IMPORTANT
+                : TaskPriority.NORMAL;
+
+        var taskEntry = new TaskEntry(taskName, priority);
+
+        if (intervalCheckBox.isSelected()) {
+            return addIntervalTask(
+                    dialog,
+                    startHourBox,
+                    endHourBox,
+                    taskEntry
+            );
+        }
+
+        addSingleTask(taskHourBox, taskEntry);
+        return true;
+    }
+
+    private boolean addIntervalTask(
+            JDialog dialog,
+            JComboBox<String> startHourBox,
+            JComboBox<String> endHourBox,
+            TaskEntry taskEntry
+    ) {
+        var startHour = startHourBox.getSelectedIndex();
+        var endHour = endHourBox.getSelectedIndex();
+
+        if (endHour <= startHour) {
+            JOptionPane.showMessageDialog(
+                    dialog,
+                    "Время окончания должно быть позже времени начала.",
+                    "Ошибка",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return false;
+        }
+
+        for (int hour = startHour; hour < endHour; hour++) {
+            var taskKey = String.format("%02d", hour);
+            taskModel.setTask(selectedDate, taskKey, taskEntry);
+        }
+
+        return true;
+    }
+
+    private void addSingleTask(
+            JComboBox<String> taskHourBox,
+            TaskEntry taskEntry
+    ) {
+        var taskKey = String.format(
+                "%02d",
+                taskHourBox.getSelectedIndex()
+        );
+
+        taskModel.setTask(selectedDate, taskKey, taskEntry);
+    }
+
+    private void refreshTaskViews() {
+        loadTasksForSelectedDate();
+        calendarPanel.loadTasks();
+
+        var calendarWeekStart = calendarPanel.getWeekStart();
+
+        if (selectedDate.isBefore(calendarWeekStart)
+                || selectedDate.isAfter(calendarWeekStart.plusDays(6))) {
+
+            var newWeekStart =
+                    selectedDate.with(java.time.DayOfWeek.MONDAY);
+
+            calendarPanel.setWeekStart(newWeekStart);
+            calendarPanel.loadTasks();
+        }
     }
 
     private JPanel createDialogButtonPanel(JButton addButton, JButton cancelButton) {

@@ -3,6 +3,7 @@ package app;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import tools.jackson.databind.ObjectMapper;
+import repository.TaskStorageException;
 
 import javax.swing.*;
 import java.awt.*;
@@ -53,7 +54,22 @@ public final class MainApp {
         SwingUtilities.invokeLater(() -> {
             applyLookAndFeel();
 
-            var frame = new ui.MainFrame();
+            final ui.MainFrame frame;
+            try {
+                frame = new ui.MainFrame();
+            } catch (TaskStorageException e) {
+                LOG.log(Level.SEVERE, "Не удалось открыть хранилище задач", e);
+                JOptionPane.showMessageDialog(
+                        null,
+                        "Не удалось загрузить или восстановить задачи.\n"
+                                + "Приложение не будет запускаться с пустым хранилищем, "
+                                + "чтобы не потерять данные.\n\n"
+                                + e.getMessage(),
+                        "Ошибка хранилища DisciplineApp",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
             frame.setVisible(true);
 
             CompletableFuture.delayedExecutor(UPDATE_CHECK_DELAY.toSeconds(), TimeUnit.SECONDS).execute(
@@ -74,13 +90,13 @@ public final class MainApp {
                     if (isNewerVersion(latestVersion, currentVersion)) {
                         SwingUtilities.invokeLater(() -> {
                             var result = JOptionPane.showConfirmDialog(
-                                frame,
-                                "Доступна новая версия: " + latestVersion + "\n" +
-                                "Текущая версия: " + currentVersion + "\n\n" +
-                                "Обновить приложение?",
-                                "Обновление доступно",
-                                JOptionPane.YES_NO_OPTION,
-                                JOptionPane.INFORMATION_MESSAGE
+                                    frame,
+                                    "Доступна новая версия: " + latestVersion + "\n" +
+                                            "Текущая версия: " + currentVersion + "\n\n" +
+                                            "Обновить приложение?",
+                                    "Обновление доступно",
+                                    JOptionPane.YES_NO_OPTION,
+                                    JOptionPane.INFORMATION_MESSAGE
                             );
 
                             if (result == JOptionPane.YES_OPTION) {
@@ -324,6 +340,4 @@ public final class MainApp {
         var packageVersion = MainApp.class.getPackage().getImplementationVersion();
         return normalizeVersion(packageVersion);
     }
-
-
 }
