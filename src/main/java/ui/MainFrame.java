@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.concurrent.CompletionException;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -264,24 +265,71 @@ public class MainFrame extends JFrame {
         return date.format(DATE_FORMAT);
     }
 
+
     private void deleteSelectedTask() {
         var selected = taskList.getSelectedValue();
-        if (selected == null) return;
+
+        if (selected == null) {
+            return;
+        }
 
         var confirm = JOptionPane.showConfirmDialog(
-                this, "Удалить задачу?",
-                "Подтверждение", JOptionPane.YES_NO_OPTION,
+                this,
+                "Удалить задачу?",
+                "Подтверждение",
+                JOptionPane.YES_NO_OPTION,
                 JOptionPane.QUESTION_MESSAGE
         );
-        if (confirm != JOptionPane.YES_OPTION) return;
 
-        // Удаляем все ключи, связанные с выбранной датой
-        for (var key : selected.keys().split(",")) {
-            taskModel.removeTask(selectedDate, key);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
         }
-        calendarPanel.loadTasks(); // Обновляем календарь
-        loadTasksForSelectedDate();
+
+        var date = selectedDate;
+        var keys = java.util.Arrays.stream(selected.keys().split(","))
+                .collect(java.util.stream.Collectors.toSet());
+
+        taskList.setEnabled(false);
+
+        taskModel.removeTasksAsync(date, keys)
+                .whenComplete((_, error) ->
+                        SwingUtilities.invokeLater(() -> {
+                            taskList.setEnabled(true);
+
+                            if (error != null) {
+                                showStorageError("удалить задачу", error);
+                                return;
+                            }
+
+                            if (selectedDate.equals(date)) {
+                                loadTasksForSelectedDate();
+                            }
+
+                            calendarPanel.loadTasks();
+                        })
+                );
     }
+
+
+    // ================= Storage Error =================
+
+    private void showStorageError(String action, Throwable error) {
+        var cause = error;
+
+        while (cause instanceof CompletionException
+                && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+
+        JOptionPane.showMessageDialog(
+                this,
+                "Не удалось " + action + ".\n\n"
+                        + cause.getMessage(),
+                "Ошибка хранилища",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
+
 
     // ================= DATE WATCHER =================
     private void startDateWatcher() {
@@ -447,7 +495,6 @@ public class MainFrame extends JFrame {
                     endHourBox
             )) {
                 dialog.dispose();
-                refreshTaskViews();
             }
         });
 
@@ -566,6 +613,7 @@ public class MainFrame extends JFrame {
         dialog.setVisible(true);
     }
 
+
     private boolean addTask(
             JDialog dialog,
             JTextField taskNameField,
@@ -625,10 +673,13 @@ public class MainFrame extends JFrame {
             return false;
         }
 
+        var entries = new java.util.LinkedHashMap<String, TaskEntry>();
+
         for (int hour = startHour; hour < endHour; hour++) {
-            var taskKey = String.format("%02d", hour);
-            taskModel.setTask(selectedDate, taskKey, taskEntry);
+            entries.put(String.format("%02d", hour), taskEntry);
         }
+
+        saveTasksAsync(selectedDate, entries);
 
         return true;
     }
@@ -642,7 +693,28 @@ public class MainFrame extends JFrame {
                 taskHourBox.getSelectedIndex()
         );
 
-        taskModel.setTask(selectedDate, taskKey, taskEntry);
+        saveTasksAsync(selectedDate, java.util.Map.of(taskKey, taskEntry));
+    }
+
+    private void saveTasksAsync(
+            LocalDate date,
+            java.util.Map<String, TaskEntry> entries
+    ) {
+        taskModel.setTasksAsync(date, entries)
+                .whenComplete((_, error) ->
+                        SwingUtilities.invokeLater(() -> {
+                            if (error != null) {
+                                showStorageError("сохранить задачу", error);
+                                return;
+                            }
+
+                            if (selectedDate.equals(date)) {
+                                loadTasksForSelectedDate();
+                            }
+
+                            calendarPanel.loadTasks();
+                        })
+                );
     }
 
     private void refreshTaskViews() {

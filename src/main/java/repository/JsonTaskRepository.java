@@ -70,28 +70,77 @@ public final class JsonTaskRepository implements TaskRepository {
         return tasks.getOrDefault(date, Collections.emptyMap()).get(key);
     }
 
+
     @Override
-    public synchronized void setTask(LocalDate date, String key, TaskEntry entry) {
+    public synchronized void setTask(
+            LocalDate date,
+            String key,
+            TaskEntry entry
+    ) {
+        setTasks(date, Map.of(key, entry));
+    }
+
+    @Override
+    public synchronized void setTasks(
+            LocalDate date,
+            Map<String, TaskEntry> entries
+    ) {
         Objects.requireNonNull(date, "date");
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(entry, "entry");
+        Objects.requireNonNull(entries, "entries");
+
+        if (entries.isEmpty()) {
+            return;
+        }
 
         Map<LocalDate, Map<String, TaskEntry>> candidate = copyTasks(tasks);
-        candidate.computeIfAbsent(date, ignored -> new HashMap<>()).put(key, entry);
+
+        Map<String, TaskEntry> dayTasks =
+                candidate.computeIfAbsent(date, ignored -> new HashMap<>());
+
+        entries.forEach((key, entry) -> {
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(entry, "entry");
+            dayTasks.put(key, entry);
+        });
+
         persist(candidate);
         tasks = candidate;
     }
 
+
+
     @Override
     public synchronized void removeTask(LocalDate date, String key) {
-        if (date == null || key == null) return;
+        if (date == null || key == null) {
+            return;
+        }
+
+        removeTasks(date, java.util.Set.of(key));
+    }
+
+    @Override
+    public synchronized void removeTasks(
+            LocalDate date,
+            java.util.Set<String> keys
+    ) {
+        if (date == null || keys == null || keys.isEmpty()) {
+            return;
+        }
+
         Map<String, TaskEntry> currentDay = tasks.get(date);
-        if (currentDay == null || !currentDay.containsKey(key)) return;
+
+        if (currentDay == null || keys.stream().noneMatch(currentDay::containsKey)) {
+            return;
+        }
 
         Map<LocalDate, Map<String, TaskEntry>> candidate = copyTasks(tasks);
         Map<String, TaskEntry> candidateDay = candidate.get(date);
-        candidateDay.remove(key);
-        if (candidateDay.isEmpty()) candidate.remove(date);
+
+        keys.forEach(candidateDay::remove);
+
+        if (candidateDay.isEmpty()) {
+            candidate.remove(date);
+        }
 
         persist(candidate);
         tasks = candidate;

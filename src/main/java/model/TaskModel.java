@@ -7,6 +7,7 @@ import repository.TaskStorageExecutor;
 
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class TaskModel implements AutoCloseable {
@@ -59,6 +60,36 @@ public class TaskModel implements AutoCloseable {
                 () -> repository.setTask(date, key, entry)
         );
     }
+
+
+    /**
+     * Асинхронно сохраняет несколько задач за одну операцию.
+     */
+    public CompletableFuture<Void> setTasksAsync(
+            LocalDate date,
+            Map<String, TaskEntry> entries
+    ) {
+        var snapshot = Map.copyOf(entries);
+
+        return storageExecutor.submit(
+                () -> repository.setTasks(date, snapshot)
+        );
+    }
+
+    /**
+     * Асинхронно удаляет несколько задач за одну операцию.
+     */
+    public CompletableFuture<Void> removeTasksAsync(
+            LocalDate date,
+            Set<String> keys
+    ) {
+        var snapshot = Set.copyOf(keys);
+
+        return storageExecutor.submit(
+                () -> repository.removeTasks(date, snapshot)
+        );
+    }
+
 
     /**
      * Асинхронно удаляет задачу в отдельном потоке.

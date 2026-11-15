@@ -16,6 +16,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionException;
 
 public class CalendarPanel extends JPanel {
 
@@ -631,6 +632,7 @@ public class CalendarPanel extends JPanel {
         dialog.setVisible(true);
     }
 
+
     private boolean handleTaskInput(
             int row,
             int column,
@@ -651,21 +653,27 @@ public class CalendarPanel extends JPanel {
 
         var hour = String.format("%02d", row);
         var date = weekStart.plusDays(column);
+        var targetWeekStart = weekStart;
 
         var entry = existing != null
-                ? new TaskEntry(
-                input,
-                priority,
-                existing.done()
-        )
-                : new TaskEntry(
-                input,
-                priority
-        );
+                ? new TaskEntry(input, priority, existing.done())
+                : new TaskEntry(input, priority);
 
-        model.setValueAt(entry, row, column);
-        taskModel.setTask(date, hour, entry);
-        notifyTaskChanged();
+        taskModel.setTaskAsync(date, hour, entry)
+                .whenComplete((_, error) ->
+                        SwingUtilities.invokeLater(() -> {
+                            if (error != null) {
+                                showStorageError("сохранить задачу", error);
+                                return;
+                            }
+
+                            if (weekStart.equals(targetWeekStart)) {
+                                model.setValueAt(entry, row, column);
+                            }
+
+                            notifyTaskChanged();
+                        })
+                );
 
         return true;
     }
@@ -738,36 +746,63 @@ public class CalendarPanel extends JPanel {
         return (TaskEntry) model.getValueAt(r, c);
     }
 
-    private void toggleTaskDone() {
-        var r = table.getSelectedRow();
-        var c = table.getSelectedColumn();
 
-        if (r < 0 || c < 0) {
+    private void toggleTaskDone() {
+        var row = table.getSelectedRow();
+        var column = table.getSelectedColumn();
+
+        if (row < 0 || column < 0) {
             return;
         }
 
-        var entry = (TaskEntry) model.getValueAt(r, c);
+        var entry = (TaskEntry) model.getValueAt(row, column);
 
         if (entry == null) {
             return;
         }
 
+        var date = weekStart.plusDays(column);
+        var targetWeekStart = weekStart;
+        var key = String.format("%02d", row);
+
         var updatedEntry = entry.withDone(!entry.done());
 
-        var date = weekStart.plusDays(c);
-        var key = String.format("%02d", r);
+        taskModel.setTaskAsync(date, key, updatedEntry)
+                .whenComplete((_, error) ->
+                        SwingUtilities.invokeLater(() -> {
+                            if (error != null) {
+                                showStorageError(
+                                        "изменить статус задачи",
+                                        error
+                                );
+                                return;
+                            }
 
-        taskModel.setTask(date, key, updatedEntry);
-        model.setValueAt(updatedEntry, r, c);
+                            if (weekStart.equals(targetWeekStart)) {
+                                model.setValueAt(
+                                        updatedEntry,
+                                        row,
+                                        column
+                                );
+                            }
 
-        notifyTaskChanged();
+                            notifyTaskChanged();
+                        })
+                );
     }
 
-    private void deleteSelectedTask() {
-        var r = table.getSelectedRow();
-        var c = table.getSelectedColumn();
 
-        if (r < 0 || c < 0) {
+    private void deleteSelectedTask() {
+        var row = table.getSelectedRow();
+        var column = table.getSelectedColumn();
+
+        if (row < 0 || column < 0) {
+            return;
+        }
+
+        var entry = model.getValueAt(row, column);
+
+        if (entry == null) {
             return;
         }
 
@@ -783,13 +818,25 @@ public class CalendarPanel extends JPanel {
             return;
         }
 
-        model.setValueAt(null, r, c);
+        var date = weekStart.plusDays(column);
+        var targetWeekStart = weekStart;
+        var key = String.format("%02d", row);
 
-        var date = weekStart.plusDays(c);
-        var key = String.format("%02d", r);
+        taskModel.removeTaskAsync(date, key)
+                .whenComplete((_, error) ->
+                        SwingUtilities.invokeLater(() -> {
+                            if (error != null) {
+                                showStorageError("удалить задачу", error);
+                                return;
+                            }
 
-        taskModel.removeTask(date, key);
-        notifyTaskChanged();
+                            if (weekStart.equals(targetWeekStart)) {
+                                model.setValueAt(null, row, column);
+                            }
+
+                            notifyTaskChanged();
+                        })
+                );
     }
 
     // ================= TASK CHANGE CALLBACK =================
@@ -819,4 +866,23 @@ public class CalendarPanel extends JPanel {
         updateTodayButton();
         loadTasks();
     }
+
+
+    private void showStorageError(String action, Throwable error) {
+        var cause = error;
+
+        while (cause instanceof CompletionException
+                && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+
+        JOptionPane.showMessageDialog(
+                this,
+                "Не удалось " + action + ".\n\n"
+                        + cause.getMessage(),
+                "Ошибка хранилища",
+                JOptionPane.ERROR_MESSAGE
+        );
+    }
+
 }

@@ -3,7 +3,6 @@ package app;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import tools.jackson.databind.ObjectMapper;
-import repository.TaskStorageException;
 import model.TaskModel;
 
 import javax.swing.*;
