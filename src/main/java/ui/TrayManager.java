@@ -20,16 +20,16 @@ public final class TrayManager {
 
     private TrayManager() {}
 
-    public static void install(JFrame frame) {
-        if (!SystemTray.isSupported())
+    public static void install(MainFrame frame) {
+        if (!SystemTray.isSupported()) {
             return;
-
-        // Guard: не устанавливаем трей повторно
-        if (trayIcon != null) return;
-
-        if (frame instanceof MainFrame mainFrame) {
-            mainFrameRef = new WeakReference<>(mainFrame);
         }
+
+        if (trayIcon != null) {
+            return;
+        }
+
+        mainFrameRef = new WeakReference<>(frame);
 
         var tray = SystemTray.getSystemTray();
 
@@ -61,10 +61,13 @@ public final class TrayManager {
                         frame.setVisible(false)));
 
         exitItem.addActionListener(_ -> {
-            tray.remove(trayIcon);
-            trayIcon = null;
-            performCleanup();
-            System.exit(0);
+            var mainFrame = mainFrameRef != null
+                    ? mainFrameRef.get()
+                    : null;
+
+            if (mainFrame != null) {
+                mainFrame.requestShutdown();
+            }
         });
 
         trayIcon.addActionListener(_ ->
@@ -78,7 +81,21 @@ public final class TrayManager {
         } catch (AWTException e) {
             LOG.log(Level.WARNING, "Не удалось добавить иконку в трей", e);
             trayIcon = null;
+            mainFrameRef = null;
         }
+    }
+
+    /**
+     * Удаляет иконку приложения из системного трея.
+     */
+    public static void removeTrayIcon() {
+        if (trayIcon == null) {
+            return;
+        }
+
+        SystemTray.getSystemTray().remove(trayIcon);
+        trayIcon = null;
+        mainFrameRef = null;
     }
 
     /** Показывает toast-уведомление при скрытии окна */
@@ -89,13 +106,6 @@ public final class TrayManager {
                     "Свернуто в трей",
                     TrayIcon.MessageType.INFO
             );
-        }
-    }
-
-    private static void performCleanup() {
-        var frame = mainFrameRef != null ? mainFrameRef.get() : null;
-        if (frame != null) {
-            frame.stopAllTimers();
         }
     }
 

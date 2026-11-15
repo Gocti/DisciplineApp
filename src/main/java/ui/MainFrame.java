@@ -50,6 +50,8 @@ public class MainFrame extends JFrame {
 
     private boolean closing;
 
+    private JMenuItem exitItem;
+
     public MainFrame(TaskModel taskModel) {
         this.taskModel = taskModel;
 
@@ -104,53 +106,67 @@ public class MainFrame extends JFrame {
         var menuBar = new JMenuBar();
         var fileMenu = new JMenu("Файл");
 
-        var exitItem = new JMenuItem("Выход");
-
-        exitItem.addActionListener(_ -> {
-            if (closing) {
-                return;
-            }
-
-            closing = true;
-            exitItem.setEnabled(false);
-
-            // Блокируем взаимодействие с окном на время завершения.
-            var glassPane = getRootPane().getGlassPane();
-            glassPane.setCursor(
-                    java.awt.Cursor.getPredefinedCursor(
-                            java.awt.Cursor.WAIT_CURSOR
-                    )
-            );
-            glassPane.setVisible(true);
-
-            setTitle(getTitle() + " — Завершение...");
-
-            taskModel.closeAsync()
-                    .whenComplete((_, error) ->
-                            SwingUtilities.invokeLater(() -> {
-                                if (error != null) {
-                                    closing = false;
-                                    exitItem.setEnabled(true);
-                                    glassPane.setVisible(false);
-
-                                    StorageErrorDialog.show(this, "завершить приложение", error);
-                                    return;
-                                }
-
-                                // Все операции хранилища завершены.
-                                stopAllTimers();
-                                dispose();
-                                System.exit(0);
-                            })
-                    );
-        });
+        exitItem = new JMenuItem("Выход");
+        exitItem.addActionListener(_ -> requestShutdown());
 
         fileMenu.add(exitItem);
         menuBar.add(fileMenu);
         getRootPane().setJMenuBar(menuBar);
     }
 
+    /**
+     * Запрашивает корректное завершение приложения.
+     * Все операции сохранения должны завершиться до выхода.
+     */
+    public void requestShutdown() {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::requestShutdown);
+            return;
+        }
+
+        if (closing) {
+            return;
+        }
+
+        closing = true;
+        exitItem.setEnabled(false);
+
+        var glassPane = getRootPane().getGlassPane();
+        glassPane.setCursor(
+                Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR)
+        );
+        glassPane.setVisible(true);
+
+        setTitle(APP_TITLE + " — Завершение...");
+
+        taskModel.closeAsync()
+                .whenComplete((_, error) ->
+                        SwingUtilities.invokeLater(() -> {
+                            if (error != null) {
+                                closing = false;
+                                exitItem.setEnabled(true);
+                                glassPane.setVisible(false);
+                                setTitle(APP_TITLE);
+
+                                StorageErrorDialog.show(
+                                        this,
+                                        "завершить приложение",
+                                        error
+                                );
+                                return;
+                            }
+
+                            stopAllTimers();
+                            TrayManager.removeTrayIcon();
+                            dispose();
+                            System.exit(0);
+                        })
+                );
+    }
+
     // ================= UI =================
+
+
     private void initUi() {
         setLayout(new BorderLayout(12, 12));
 
