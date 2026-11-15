@@ -4,6 +4,7 @@ import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 import tools.jackson.databind.ObjectMapper;
 import repository.TaskStorageException;
+import model.TaskModel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -54,27 +55,42 @@ public final class MainApp {
         SwingUtilities.invokeLater(() -> {
             applyLookAndFeel();
 
-            final ui.MainFrame frame;
-            try {
-                frame = new ui.MainFrame();
-            } catch (TaskStorageException e) {
-                LOG.log(Level.SEVERE, "Не удалось открыть хранилище задач", e);
-                JOptionPane.showMessageDialog(
-                        null,
-                        "Не удалось загрузить или восстановить задачи.\n"
-                                + "Приложение не будет запускаться с пустым хранилищем, "
-                                + "чтобы не потерять данные.\n\n"
-                                + e.getMessage(),
-                        "Ошибка хранилища DisciplineApp",
-                        JOptionPane.ERROR_MESSAGE
-                );
-                return;
-            }
-            frame.setVisible(true);
+            CompletableFuture
+                    .supplyAsync(TaskModel::new)
+                    .whenComplete((taskModel, error) ->
+                            SwingUtilities.invokeLater(() -> {
+                                if (error != null) {
+                                    var cause = error.getCause() != null
+                                            ? error.getCause()
+                                            : error;
 
-            CompletableFuture.delayedExecutor(UPDATE_CHECK_DELAY.toSeconds(), TimeUnit.SECONDS).execute(
-                    () -> checkForUpdatesAsync(frame)
-            );
+                                    LOG.log(
+                                            Level.SEVERE,
+                                            "Не удалось открыть хранилище задач",
+                                            cause
+                                    );
+
+                                    JOptionPane.showMessageDialog(
+                                            null,
+                                            "Не удалось загрузить или восстановить задачи.\n"
+                                                    + "Приложение не будет запускаться с пустым "
+                                                    + "хранилищем, чтобы не потерять данные.\n\n"
+                                                    + cause.getMessage(),
+                                            "Ошибка хранилища DisciplineApp",
+                                            JOptionPane.ERROR_MESSAGE
+                                    );
+                                    return;
+                                }
+
+                                var frame = new ui.MainFrame(taskModel);
+                                frame.setVisible(true);
+
+                                CompletableFuture.delayedExecutor(
+                                        UPDATE_CHECK_DELAY.toSeconds(),
+                                        TimeUnit.SECONDS
+                                ).execute(() -> checkForUpdatesAsync(frame));
+                            })
+                    );
         });
     }
 

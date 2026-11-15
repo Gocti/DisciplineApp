@@ -39,7 +39,7 @@ public class MainFrame extends JFrame {
     private LocalDate currentDate = LocalDate.now(SYSTEM_ZONE);
     private LocalDate selectedDate = LocalDate.now(SYSTEM_ZONE); // Выбранная дата для просмотра задач
 
-    private transient TaskModel taskModel;
+    private final transient TaskModel taskModel;
     private JList<TaskInfo> taskList;
     private CalendarPanel calendarPanel;
     private SettingsPanel settingsPanel;
@@ -47,7 +47,9 @@ public class MainFrame extends JFrame {
     private Timer dateWatcherTimer;
 
 
-    public MainFrame() {
+    public MainFrame(TaskModel taskModel) {
+        this.taskModel = taskModel;
+
         applyTheme();
         initFrame();
         initUi();
@@ -113,8 +115,6 @@ public class MainFrame extends JFrame {
     // ================= UI =================
     private void initUi() {
         setLayout(new BorderLayout(12, 12));
-
-        taskModel = new TaskModel();
 
         dateLabel = new JLabel("Сегодня: " + currentDate.format(DATE_FORMAT));
         dateLabel.setFont(dateLabel.getFont().deriveFont(Font.BOLD, 16f));
