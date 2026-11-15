@@ -1,16 +1,23 @@
 package updater;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import ui.MainFrame;
 
 import javax.swing.*;
 import java.awt.*;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -19,17 +26,32 @@ public final class UpdateManager {
     private static final Logger LOG =
             Logger.getLogger(UpdateManager.class.getName());
 
-    private static final String INSTALLER_URL =
-            "https://github.com/Gocti/DisciplineApp/releases/latest/download/DisciplineApp-installer.exe";
+    private static final String GITHUB_API_URL =
+            "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
+
+    private static final String INSTALLER_NAME_PREFIX =
+            "DisciplineApp-Setup-";
+
+    private static final String INSTALLER_NAME_SUFFIX = ".exe";
+
+    private static final Duration CONNECT_TIMEOUT =
+            Duration.ofSeconds(10);
+
+    private static final Duration DOWNLOAD_TIMEOUT =
+            Duration.ofMinutes(5);
 
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
+            .connectTimeout(CONNECT_TIMEOUT)
+            .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private UpdateManager() {}
 
     /**
-     * Скачивает установщик и запускает его после корректного завершения приложения.
+     * Загружает последнюю версию установщика с GitHub
+     * и запускает её после корректного завершения приложения.
      */
     public static void updateAsync(Component owner) {
         var updateThread = new Thread(() -> {
@@ -39,22 +61,39 @@ public final class UpdateManager {
             );
 
             try {
-                download(INSTALLER_URL, installerPath);
+                var release = getLatestRelease();
+                download(
+                        release.downloadUrl(),
+                        installerPath,
+                        release.sha256()
+                );
 
                 SwingUtilities.invokeLater(() ->
                         shutdownAndInstall(owner, installerPath)
                 );
 
             } catch (IOException e) {
-                LOG.log(Level.SEVERE, "Не удалось скачать установщик обновления", e);
+                LOG.log(
+                        Level.SEVERE,
+                        "Не удалось загрузить или проверить обновление",
+                        e
+                );
+
                 showUpdateError(
                         owner,
-                        "Не удалось скачать установщик обновления."
+                        "Не удалось загрузить или проверить установщик обновления.%n%s"
+                                .formatted(e.getMessage())
                 );
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                LOG.log(Level.WARNING, "Загрузка обновления прервана", e);
+
+                LOG.log(
+                        Level.WARNING,
+                        "Загрузка обновления прервана",
+                        e
+                );
+
                 showUpdateError(
                         owner,
                         "Загрузка обновления была прервана."
@@ -66,15 +105,161 @@ public final class UpdateManager {
         updateThread.start();
     }
 
+
     /**
-     * Завершает приложение и запускает установщик после закрытия TaskModel.
+     * Получает информацию о последнем релизе GitHub.
+     */
+    private static ReleaseInfo getLatestRelease()
+            throws IOException, InterruptedException {
+
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create(GITHUB_API_URL))
+                .timeout(CONNECT_TIMEOUT)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "DisciplineApp")
+                .GET()
+                .build();
+
+        var response = HTTP_CLIENT.send(
+                request,
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        if (response.statusCode() != 200) {
+            throw new IOException(
+                    "GitHub API вернул HTTP %d".formatted(response.statusCode())
+            );
+        }
+
+        var root = JSON.readTree(response.body());
+
+        var version = normalizeVersion(
+                requireString(
+                        root,
+                        "tag_name",
+                        "В ответе GitHub отсутствует корректный tag_name."
+                )
+        );
+
+        var expectedAssetName =
+                INSTALLER_NAME_PREFIX + version + INSTALLER_NAME_SUFFIX;
+
+        var assets = root.get("assets");
+
+        if (assets == null || !assets.isArray()) {
+            throw new IOException(
+                    "В информации о релизе отсутствует список assets."
+            );
+        }
+
+        return findInstaller(assets, expectedAssetName);
+    }
+
+    /**
+     * Ищет установщик с ожидаемым именем среди assets релиза.
+     */
+    private static ReleaseInfo findInstaller(
+            JsonNode assets,
+            String expectedAssetName
+    ) throws IOException {
+
+        for (JsonNode asset : assets) {
+            if (isExpectedInstaller(asset, expectedAssetName)) {
+                return parseInstallerAsset(asset);
+            }
+        }
+
+        throw new IOException(
+                "В последнем релизе не найден установщик %s"
+                        .formatted(expectedAssetName)
+        );
+    }
+
+    /**
+     * Проверяет имя asset.
+     */
+    private static boolean isExpectedInstaller(
+            JsonNode asset,
+            String expectedAssetName
+    ) {
+
+        var nameNode = asset.get("name");
+
+        return nameNode != null
+                && nameNode.isString()
+                && expectedAssetName.equals(nameNode.stringValue());
+    }
+
+    /**
+     * Извлекает ссылку и SHA-256 установщика.
+     */
+    private static ReleaseInfo parseInstallerAsset(JsonNode asset)
+            throws IOException {
+
+        var downloadUrl = requireString(
+                asset,
+                "browser_download_url",
+                "Установщик найден, но ссылка на скачивание отсутствует."
+        );
+
+        var digest = requireString(
+                asset,
+                "digest",
+                "GitHub не предоставил SHA-256 установщика."
+        );
+
+        if (!digest.startsWith("sha256:")) {
+            throw new IOException(
+                    "GitHub не предоставил SHA-256 установщика."
+            );
+        }
+
+        var sha256 = digest.substring("sha256:".length())
+                .toLowerCase(java.util.Locale.ROOT);
+
+        if (!sha256.matches("[0-9a-f]{64}")) {
+            throw new IOException(
+                    "GitHub вернул некорректную SHA-256 контрольную сумму."
+            );
+        }
+
+        return new ReleaseInfo(downloadUrl, sha256);
+    }
+
+    /**
+     * Получает обязательное строковое поле JSON.
+     */
+    private static String requireString(
+            JsonNode object,
+            String field,
+            String errorMessage
+    ) throws IOException {
+
+        var node = object.get(field);
+
+        if (node == null || !node.isString()) {
+            throw new IOException(errorMessage);
+        }
+
+        return node.stringValue();
+    }
+
+
+    /**
+     * Завершает приложение и запускает установщик
+     * после закрытия TaskModel.
      * Вызывается на EDT.
      */
-    private static void shutdownAndInstall(Component owner, Path installerPath) {
+    private static void shutdownAndInstall(
+            Component owner,
+            Path installerPath
+    ) {
         MainFrame mainFrame = findMainFrame(owner);
 
         if (mainFrame == null) {
-            LOG.severe("Не удалось найти главное окно приложения для завершения.");
+            LOG.severe(
+                    "Не удалось найти главное окно приложения для завершения."
+            );
 
             showUpdateError(
                     owner,
@@ -89,11 +274,16 @@ public final class UpdateManager {
                 System.exit(0);
 
             } catch (IOException e) {
-                LOG.log(Level.SEVERE, "Не удалось запустить установщик", e);
+                LOG.log(
+                        Level.SEVERE,
+                        "Не удалось запустить установщик",
+                        e
+                );
 
                 JOptionPane.showMessageDialog(
                         null,
-                        "Не удалось запустить установщик обновления.\n"
+                        "Не удалось запустить установщик обновления."
+                                + System.lineSeparator()
                                 + "Приложение будет закрыто.",
                         "Ошибка обновления",
                         JOptionPane.ERROR_MESSAGE
@@ -126,7 +316,10 @@ public final class UpdateManager {
         return null;
     }
 
-    private static void showUpdateError(Component owner, String message) {
+    private static void showUpdateError(
+            Component owner,
+            String message
+    ) {
         SwingUtilities.invokeLater(() ->
                 JOptionPane.showMessageDialog(
                         owner,
@@ -139,36 +332,92 @@ public final class UpdateManager {
 
     // ================= DOWNLOAD =================
 
-    private static void download(String url, Path target)
-            throws IOException, InterruptedException {
+    /**
+     * Скачивает установщик и проверяет его SHA-256.
+     */
+    private static void download(
+            String url,
+            Path target,
+            String expectedSha256
+    ) throws IOException, InterruptedException {
 
-        var request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofMinutes(5))
-                .GET()
-                .build();
+        try {
+            var request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(DOWNLOAD_TIMEOUT)
+                    .header("User-Agent", "DisciplineApp")
+                    .GET()
+                    .build();
 
-        var response = HTTP_CLIENT.send(
-                request,
-                HttpResponse.BodyHandlers.ofFile(
-                        target,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING
-                )
-        );
-
-        if (response.statusCode() != 200) {
-            Files.deleteIfExists(target);
-
-            throw new IOException(
-                    "HTTP " + response.statusCode()
-                            + " при загрузке установщика."
+            var response = HTTP_CLIENT.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofFile(
+                            target,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING
+                    )
             );
-        }
 
-        if (!Files.isRegularFile(target) || Files.size(target) == 0) {
+            if (response.statusCode() != 200) {
+                throw new IOException(
+                        "HTTP " + response.statusCode()
+                                + " при загрузке установщика."
+                );
+            }
+
+            if (!Files.isRegularFile(target) || Files.size(target) == 0) {
+                throw new IOException(
+                        "Скачанный установщик отсутствует или пуст."
+                );
+            }
+
+            var actualSha256 = calculateSha256(target);
+
+            if (!MessageDigest.isEqual(
+                    expectedSha256.getBytes(StandardCharsets.US_ASCII),
+                    actualSha256.getBytes(StandardCharsets.US_ASCII)
+            )) {
+                throw new IOException(
+                        "SHA-256 установщика не совпадает с контрольной суммой GitHub."
+                );
+            }
+
+            LOG.info(() ->
+                    "Установщик успешно загружен и проверен. SHA-256: %s"
+                            .formatted(actualSha256)
+            );
+
+        } catch (IOException | InterruptedException e) {
             Files.deleteIfExists(target);
-            throw new IOException("Скачанный установщик отсутствует или пуст.");
+            throw e;
+        }
+    }
+
+    /**
+     * Вычисляет SHA-256 файла потоковым чтением.
+     */
+    private static String calculateSha256(Path file)
+            throws IOException {
+
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+
+            try (InputStream input = Files.newInputStream(file)) {
+                var buffer = new byte[8192];
+                int bytesRead;
+
+                while ((bytesRead = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, bytesRead);
+                }
+            }
+
+            return HexFormat.of().formatHex(digest.digest());
+
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(
+                    "SHA-256 не поддерживается текущей Java Runtime.",
+                    e
+            );
         }
     }
 
@@ -182,4 +431,21 @@ public final class UpdateManager {
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
     }
+
+    // ================= VERSION =================
+
+    private static String normalizeVersion(String version) {
+        var normalized = version.trim();
+
+        if (normalized.startsWith("v") || normalized.startsWith("V")) {
+            return normalized.substring(1);
+        }
+
+        return normalized;
+    }
+
+    private record ReleaseInfo(
+            String downloadUrl,
+            String sha256
+    ) {}
 }
