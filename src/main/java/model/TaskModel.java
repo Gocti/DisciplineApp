@@ -1,4 +1,3 @@
-
 package model;
 
 import repository.JsonTaskRepository;
@@ -36,7 +35,11 @@ public class TaskModel implements AutoCloseable {
      * Синхронно сохраняет задачу.
      * Не вызывать из Swing EDT.
      */
-    public void setTask(LocalDate date, String key, TaskEntry entry) {
+    public void setTask(
+            LocalDate date,
+            String key,
+            TaskEntry entry
+    ) {
         repository.setTask(date, key, entry);
     }
 
@@ -49,7 +52,7 @@ public class TaskModel implements AutoCloseable {
     }
 
     /**
-     * Асинхронно сохраняет задачу в отдельном потоке.
+     * Асинхронно сохраняет задачу.
      */
     public CompletableFuture<Void> setTaskAsync(
             LocalDate date,
@@ -61,9 +64,20 @@ public class TaskModel implements AutoCloseable {
         );
     }
 
+    /**
+     * Асинхронно удаляет задачу.
+     */
+    public CompletableFuture<Void> removeTaskAsync(
+            LocalDate date,
+            String key
+    ) {
+        return storageExecutor.submit(
+                () -> repository.removeTask(date, key)
+        );
+    }
 
     /**
-     * Асинхронно сохраняет несколько задач за одну операцию.
+     * Асинхронно сохраняет несколько задач.
      */
     public CompletableFuture<Void> setTasksAsync(
             LocalDate date,
@@ -77,7 +91,7 @@ public class TaskModel implements AutoCloseable {
     }
 
     /**
-     * Асинхронно удаляет несколько задач за одну операцию.
+     * Асинхронно удаляет несколько задач.
      */
     public CompletableFuture<Void> removeTasksAsync(
             LocalDate date,
@@ -90,19 +104,18 @@ public class TaskModel implements AutoCloseable {
         );
     }
 
-
     /**
-     * Асинхронно удаляет задачу в отдельном потоке.
+     * Асинхронно закрывает хранилище,
+     * дожидаясь завершения всех операций записи.
      */
-    public CompletableFuture<Void> removeTaskAsync(
-            LocalDate date,
-            String key
-    ) {
-        return storageExecutor.submit(
-                () -> repository.removeTask(date, key)
-        );
+    public CompletableFuture<Void> closeAsync() {
+        return storageExecutor.closeAsync();
     }
 
+    /**
+     * Синхронное закрытие.
+     * Не вызывать из Swing EDT.
+     */
     @Override
     public void close() {
         storageExecutor.close();

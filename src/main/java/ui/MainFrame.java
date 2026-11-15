@@ -47,6 +47,8 @@ public class MainFrame extends JFrame {
 
     private Timer dateWatcherTimer;
 
+    private boolean closing;
+
 
     public MainFrame(TaskModel taskModel) {
         this.taskModel = taskModel;
@@ -103,11 +105,49 @@ public class MainFrame extends JFrame {
         var fileMenu = new JMenu("Файл");
 
         var exitItem = new JMenuItem("Выход");
+
         exitItem.addActionListener(_ -> {
-            stopAllTimers();
-            dispose();
-            System.exit(0);
+            if (closing) {
+                return;
+            }
+
+            closing = true;
+            exitItem.setEnabled(false);
+
+            // Блокируем взаимодействие с окном на время завершения.
+            var glassPane = getRootPane().getGlassPane();
+            glassPane.setCursor(
+                    java.awt.Cursor.getPredefinedCursor(
+                            java.awt.Cursor.WAIT_CURSOR
+                    )
+            );
+            glassPane.setVisible(true);
+
+            setTitle(getTitle() + " — Завершение...");
+
+            taskModel.closeAsync()
+                    .whenComplete((_, error) ->
+                            SwingUtilities.invokeLater(() -> {
+                                if (error != null) {
+                                    closing = false;
+                                    exitItem.setEnabled(true);
+                                    glassPane.setVisible(false);
+
+                                    showStorageError(
+                                            "завершить приложение",
+                                            error
+                                    );
+                                    return;
+                                }
+
+                                // Все операции хранилища завершены.
+                                stopAllTimers();
+                                dispose();
+                                System.exit(0);
+                            })
+                    );
         });
+
         fileMenu.add(exitItem);
         menuBar.add(fileMenu);
         getRootPane().setJMenuBar(menuBar);

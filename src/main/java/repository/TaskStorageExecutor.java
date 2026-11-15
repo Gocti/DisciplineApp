@@ -1,10 +1,9 @@
-
 package repository;
 
-import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -13,9 +12,6 @@ import java.util.concurrent.TimeUnit;
  */
 public final class TaskStorageExecutor implements AutoCloseable {
 
-    private static final Duration SHUTDOWN_TIMEOUT =
-            Duration.ofSeconds(10);
-
     private final ExecutorService executor =
             Executors.newSingleThreadExecutor(task -> {
                 var thread = new Thread(task, "discipline-storage");
@@ -23,25 +19,90 @@ public final class TaskStorageExecutor implements AutoCloseable {
                 return thread;
             });
 
-    public CompletableFuture<Void> submit(Runnable operation) {
-        return CompletableFuture.runAsync(operation, executor);
-    }
+    private CompletableFuture<Void> closeFuture;
 
-    @Override
-    public void close() {
-        executor.shutdown();
+    /**
+     * Добавляет операцию в последовательную очередь.
+     * <p>
+     * После начала закрытия новые операции не принимаются.
+     */
+    public synchronized CompletableFuture<Void> submit(
+            Runnable operation
+    ) {
+        if (executor.isShutdown()) {
+            return CompletableFuture.failedFuture(
+                    new RejectedExecutionException(
+                            "Хранилище уже закрывается или закрыто."
+                    )
+            );
+        }
 
         try {
-            if (!executor.awaitTermination(
-                    SHUTDOWN_TIMEOUT.toSeconds(),
-                    TimeUnit.SECONDS
-            )) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException _) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
+            return CompletableFuture.runAsync(operation, executor);
+        } catch (RejectedExecutionException exception) {
+            return CompletableFuture.failedFuture(exception);
         }
     }
-}
 
+    /**
+     * Начинает закрытие исполнителя и асинхронно
+     * ожидает завершения всех ранее поставленных операций.
+     */
+    public synchronized CompletableFuture<Void> closeAsync() {
+        if (closeFuture != null) {
+            return closeFuture;
+        }
+
+        executor.shutdown();
+
+        closeFuture = new CompletableFuture<>();
+
+        var shutdownThread = new Thread(
+                this::awaitTermination,
+                "discipline-storage-shutdown"
+        );
+
+        shutdownThread.setDaemon(true);
+        shutdownThread.start();
+
+        return closeFuture;
+    }
+
+    /**
+     * Ожидает полного завершения рабочего потока.
+     * Метод выполняется не в Swing EDT.
+     */
+    private void awaitTermination() {
+        boolean interrupted = false;
+
+        try {
+            while (true) {
+                try {
+                    if (executor.awaitTermination(
+                            1,
+                            TimeUnit.DAYS
+                    )) {
+                        closeFuture.complete(null);
+                        return;
+                    }
+                } catch (InterruptedException exception) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * Синхронное закрытие.
+     * <p>
+     * Не вызывать из Swing EDT.
+     */
+    @Override
+    public void close() {
+        closeAsync().join();
+    }
+}
