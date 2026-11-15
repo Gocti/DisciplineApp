@@ -24,7 +24,8 @@ import java.util.logging.Logger;
 /**
  * JSON-репозиторий задач с атомарной записью и резервной копией.
  * Изменение сначала сохраняется на диск и только затем становится видимым
- * в памяти. Все операции синхронизированы на уровне экземпляра.
+ * в памяти. Операции записи синхронизированы, чтение выполняется
+ * без блокировки на основе опубликованного снимка данных.
  */
 public final class JsonTaskRepository implements TaskRepository {
 
@@ -40,7 +41,9 @@ public final class JsonTaskRepository implements TaskRepository {
 
     private final Path storagePath;
     private final Path backupPath;
-    private Map<LocalDate, Map<String, TaskEntry>> tasks = new HashMap<>();
+
+    @SuppressWarnings("java:S3077")
+    private volatile Map<LocalDate, Map<String, TaskEntry>> tasks = Map.of();
 
     public JsonTaskRepository() {
         this(DEFAULT_STORAGE_PATH);
@@ -55,19 +58,41 @@ public final class JsonTaskRepository implements TaskRepository {
         loadFromDisk();
     }
 
+    private Map<LocalDate, Map<String, TaskEntry>> immutableSnapshot(
+            Map<LocalDate, Map<String, TaskEntry>> source
+    ) {
+        Map<LocalDate, Map<String, TaskEntry>> snapshot = new HashMap<>();
+
+        source.forEach((date, dayTasks) ->
+                snapshot.put(date, Map.copyOf(dayTasks))
+        );
+
+        return Map.copyOf(snapshot);
+    }
+
     @Override
-    public synchronized Map<String, TaskEntry> getTasksForDate(LocalDate date) {
+    public Map<String, TaskEntry> getTasksForDate(LocalDate date) {
         Objects.requireNonNull(date, "date");
-        Map<String, TaskEntry> dayTasks = tasks.get(date);
+
+        Map<LocalDate, Map<String, TaskEntry>> snapshot = tasks;
+        Map<String, TaskEntry> dayTasks = snapshot.get(date);
+
         return dayTasks == null
                 ? Collections.emptyMap()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(dayTasks));
     }
 
     @Override
-    public synchronized TaskEntry getTask(LocalDate date, String key) {
-        if (date == null || key == null) return null;
-        return tasks.getOrDefault(date, Collections.emptyMap()).get(key);
+    public TaskEntry getTask(LocalDate date, String key) {
+        if (date == null || key == null) {
+            return null;
+        }
+
+        Map<LocalDate, Map<String, TaskEntry>> snapshot = tasks;
+
+        return snapshot
+                .getOrDefault(date, Collections.emptyMap())
+                .get(key);
     }
 
 
@@ -104,7 +129,7 @@ public final class JsonTaskRepository implements TaskRepository {
         });
 
         persist(candidate);
-        tasks = candidate;
+        tasks = immutableSnapshot(candidate);
     }
 
 
@@ -143,7 +168,7 @@ public final class JsonTaskRepository implements TaskRepository {
         }
 
         persist(candidate);
-        tasks = candidate;
+        tasks = immutableSnapshot(candidate);
     }
 
     private void loadFromDisk() {
@@ -152,10 +177,12 @@ public final class JsonTaskRepository implements TaskRepository {
             return;
         }
         try {
-            tasks = readTasks(storagePath);
+            tasks = immutableSnapshot(readTasks(storagePath));
         } catch (Exception primaryFailure) {
-            LOG.log(Level.SEVERE,
-                    () -> "Не удалось прочитать основной файл задач: " + storagePath
+            LOG.log(
+                    Level.SEVERE,
+                    "Не удалось прочитать основной файл задач: " + storagePath,
+                    primaryFailure
             );
             recoverFromBackup(primaryFailure);
         }
@@ -189,7 +216,7 @@ public final class JsonTaskRepository implements TaskRepository {
                 deleteQuietly(temp);
             }
 
-            tasks = recovered;
+            tasks = immutableSnapshot(recovered);
             LOG.warning(() -> "Задачи восстановлены из резервной копии: " + backupPath);
         } catch (Exception backupFailure) {
             if (primaryFailure != null) backupFailure.addSuppressed(primaryFailure);
