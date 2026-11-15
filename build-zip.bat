@@ -6,13 +6,41 @@ echo   DisciplineApp - ZIP Build
 echo ========================================
 echo.
 
-set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot"
+if not defined JAVA_HOME (
+    set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-25.0.5.8-hotspot"
+)
+
 set "PATH=%JAVA_HOME%\bin;%PATH%"
 
 cd /d "%~dp0"
 
 echo Project:
 echo %CD%
+echo.
+
+REM ========================================
+REM Чтение версии из gradle.properties
+REM ========================================
+
+if not exist "gradle.properties" (
+    echo ERROR: gradle.properties not found!
+    exit /b 1
+)
+
+for /f "tokens=1,* delims==" %%A in ('findstr /R /C:"^[ ]*appVersion[ ]*=" "gradle.properties"') do (
+    set "APP_VERSION=%%B"
+)
+
+if not defined APP_VERSION (
+    echo ERROR: appVersion not found in gradle.properties!
+    exit /b 1
+)
+
+set "APP_VERSION=%APP_VERSION: =%"
+set "JAR_FILE=DisciplineApp-%APP_VERSION%-all.jar"
+set "ZIP_FILE=DisciplineApp-%APP_VERSION%.zip"
+
+echo Application version: %APP_VERSION%
 echo.
 
 REM ========================================
@@ -56,8 +84,8 @@ if exist "build\distribution" (
     rmdir /s /q "build\distribution"
 )
 
-if exist "build\DisciplineApp-1.0.0.zip" (
-    del /q "build\DisciplineApp-1.0.0.zip"
+if exist "build\%ZIP_FILE%" (
+    del /q "build\%ZIP_FILE%"
 )
 
 mkdir "build\distribution"
@@ -73,22 +101,16 @@ echo.
 
 call gradlew.bat fatJar --no-daemon
 
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo.
-    echo ========================================
     echo ERROR: Gradle build failed!
-    echo ========================================
     exit /b 1
 )
 
-if not exist "build\libs\DisciplineApp-1.0.0-all.jar" (
+if not exist "build\libs\%JAR_FILE%" (
     echo.
-    echo ========================================
     echo ERROR: JAR file not found!
-    echo ========================================
-    echo.
-    echo Expected:
-    echo build\libs\DisciplineApp-1.0.0-all.jar
+    echo Expected: build\libs\%JAR_FILE%
     exit /b 1
 )
 
@@ -105,18 +127,27 @@ echo Preparing ZIP contents...
 echo ========================================
 echo.
 
-copy "build\libs\DisciplineApp-1.0.0-all.jar" "build\distribution\"
+copy /y "build\libs\%JAR_FILE%" "build\distribution\"
+
+if errorlevel 1 (
+    echo ERROR: Failed to copy JAR!
+    exit /b 1
+)
 
 if exist "run.bat" (
-    copy "run.bat" "build\distribution\"
+    copy /y "run.bat" "build\distribution\"
+)
+
+if exist "gradle.properties" (
+    copy /y "gradle.properties" "build\distribution\"
 )
 
 if exist "README.md" (
-    copy "README.md" "build\distribution\"
+    copy /y "README.md" "build\distribution\"
 )
 
 if exist "LICENSE" (
-    copy "LICENSE" "build\distribution\"
+    copy /y "LICENSE" "build\distribution\"
 )
 
 REM ========================================
@@ -130,13 +161,11 @@ echo ========================================
 echo.
 
 powershell -NoProfile -Command ^
-    "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('build\distribution', 'build\DisciplineApp-1.0.0.zip')"
+    "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('build\distribution', 'build\%ZIP_FILE%')"
 
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo.
-    echo ========================================
     echo ERROR: ZIP creation failed!
-    echo ========================================
     exit /b 1
 )
 
@@ -144,11 +173,9 @@ REM ========================================
 REM Проверка результата
 REM ========================================
 
-if not exist "build\DisciplineApp-1.0.0.zip" (
+if not exist "build\%ZIP_FILE%" (
     echo.
-    echo ========================================
     echo ERROR: ZIP file was not created!
-    echo ========================================
     exit /b 1
 )
 
@@ -158,10 +185,10 @@ echo   ZIP CREATED SUCCESSFULLY!
 echo ========================================
 echo.
 echo File:
-echo build\DisciplineApp-1.0.0.zip
+echo build\%ZIP_FILE%
 echo.
 
-dir "build\DisciplineApp-1.0.0.zip"
+dir "build\%ZIP_FILE%"
 
 echo.
 echo ========================================

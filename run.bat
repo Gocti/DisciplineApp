@@ -9,6 +9,29 @@ REM ========================================
 set "SCRIPT_DIR=%~dp0"
 set "JAVA_EXE=java.exe"
 
+REM Читаем версию из gradle.properties
+if not exist "%SCRIPT_DIR%gradle.properties" (
+    echo.
+    echo ERROR: gradle.properties not found!
+    echo.
+    pause
+    exit /b 1
+)
+
+for /f "tokens=1,* delims== " %%A in ('findstr /R /C:"^[ ]*appVersion[ ]*=" "%SCRIPT_DIR%gradle.properties"') do (
+    set "APP_VERSION=%%B"
+)
+
+if not defined APP_VERSION (
+    echo.
+    echo ERROR: appVersion not found in gradle.properties!
+    echo.
+    pause
+    exit /b 1
+)
+
+set "JAR_FILE=build\libs\DisciplineApp-%APP_VERSION%-all.jar"
+
 REM Если JAVA_HOME задан, используем его
 if defined JAVA_HOME (
     if exist "%JAVA_HOME%\bin\java.exe" (
@@ -33,12 +56,12 @@ if errorlevel 1 (
 )
 
 REM Проверяем наличие JAR
-if not exist "%SCRIPT_DIR%DisciplineApp-1.0.0-all.jar" (
+if not exist "%SCRIPT_DIR%%JAR_FILE%" (
     echo.
     echo ERROR: DisciplineApp JAR not found!
     echo.
     echo Expected:
-    echo %SCRIPT_DIR%DisciplineApp-1.0.0-all.jar
+    echo %SCRIPT_DIR%%JAR_FILE%
     echo.
     echo Run the Gradle fatJar task first.
     echo.
@@ -47,10 +70,10 @@ if not exist "%SCRIPT_DIR%DisciplineApp-1.0.0-all.jar" (
 )
 
 echo.
-echo Starting DisciplineApp...
+echo Starting DisciplineApp v%APP_VERSION%...
 echo.
 
-"%JAVA_EXE%" -jar "%SCRIPT_DIR%DisciplineApp-1.0.0-all.jar" %*
+"%JAVA_EXE%" --enable-native-access=ALL-UNNAMED -jar "%SCRIPT_DIR%%JAR_FILE%" %*
 
 set "EXIT_CODE=%ERRORLEVEL%"
 

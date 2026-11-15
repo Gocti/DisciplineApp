@@ -115,12 +115,19 @@ public class MainFrame extends JFrame {
     }
 
     /**
-     * Запрашивает корректное завершение приложения.
-     * Все операции сохранения должны завершиться до выхода.
+     * Запрашивает обычное завершение приложения.
      */
     public void requestShutdown() {
+        requestShutdown(() -> System.exit(0));
+    }
+
+    /**
+     * Запрашивает корректное завершение приложения.
+     * afterClose выполняется на EDT после закрытия хранилища и окон.
+     */
+    public void requestShutdown(Runnable afterClose) {
         if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(this::requestShutdown);
+            SwingUtilities.invokeLater(() -> requestShutdown(afterClose));
             return;
         }
 
@@ -159,7 +166,8 @@ public class MainFrame extends JFrame {
                             stopAllTimers();
                             TrayManager.removeTrayIcon();
                             dispose();
-                            System.exit(0);
+
+                            afterClose.run();
                         })
                 );
     }

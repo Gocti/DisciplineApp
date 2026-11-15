@@ -3,7 +3,11 @@
 ; ============================================================
 
 #define MyAppName "DisciplineApp"
-#define MyAppVersion "1.0.0"
+
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
+
 #define MyAppPublisher "Discipline"
 #define MyAppExeName "DisciplineApp.exe"
 #define MyAppDir "..\build\DisciplineApp"

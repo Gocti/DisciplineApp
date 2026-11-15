@@ -39,7 +39,6 @@ public final class MainApp {
     private static final String KEY_ACCENT = "accentColor";
     private static final String KEY_FONT_NAME = "fontName";
     private static final String KEY_FONT_SIZE = "fontSize";
-    private static final String CURRENT_VERSION = "1.0.0";
 
     private static final String GITHUB_API_URL =
             "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
@@ -102,6 +101,11 @@ public final class MainApp {
                     if (latestVersion == null) return;
 
                     var currentVersion = getCurrentVersion();
+
+                    if (currentVersion.equals("dev")) {
+                        return;
+                    }
+
                     if (isNewerVersion(latestVersion, currentVersion)) {
                         SwingUtilities.invokeLater(() -> {
                             var result = JOptionPane.showConfirmDialog(
@@ -308,13 +312,16 @@ public final class MainApp {
 
     private static String normalizeVersion(String version) {
         if (version == null) {
-            return CURRENT_VERSION;
+            return "";
         }
+
         var normalized = version.trim();
+
         if (normalized.startsWith("v") || normalized.startsWith("V")) {
             normalized = normalized.substring(1);
         }
-        return normalized.isEmpty() ? CURRENT_VERSION : normalized;
+
+        return normalized;
     }
 
     // ===================== SCALE =====================
@@ -352,7 +359,13 @@ public final class MainApp {
 
     // ===================== VERSION =====================
     public static String getCurrentVersion() {
-        var packageVersion = MainApp.class.getPackage().getImplementationVersion();
+        var packageVersion =
+                MainApp.class.getPackage().getImplementationVersion();
+
+        if (packageVersion == null || packageVersion.isBlank()) {
+            return "dev";
+        }
+
         return normalizeVersion(packageVersion);
     }
 }
