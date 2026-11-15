@@ -4,6 +4,7 @@ import app.MainApp;
 import model.TaskEntry;
 import model.TaskModel;
 import model.TaskPriority;
+import model.PendingTaskOperations;
 
 import javax.swing.*;
 import java.awt.*;
@@ -12,6 +13,7 @@ import java.awt.event.WindowEvent;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.concurrent.CompletionException;
 
@@ -49,9 +51,12 @@ public class MainFrame extends JFrame {
 
     private boolean closing;
 
+    private final PendingTaskOperations pendingOperations;
+
 
     public MainFrame(TaskModel taskModel) {
         this.taskModel = taskModel;
+        this.pendingOperations = taskModel.getPendingOperations();
 
         applyTheme();
         initFrame();
@@ -326,14 +331,27 @@ public class MainFrame extends JFrame {
         }
 
         var date = selectedDate;
-        var keys = java.util.Arrays.stream(selected.keys().split(","))
-                .collect(java.util.stream.Collectors.toSet());
+        var keys = Set.copyOf(
+                java.util.Arrays.stream(selected.keys().split(","))
+                        .collect(java.util.stream.Collectors.toSet())
+        );
+
+        if (!pendingOperations.tryAcquire(date, keys)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Одна или несколько задач уже изменяются. Дождитесь завершения операции.",
+                    "Операция выполняется",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
 
         taskList.setEnabled(false);
 
         taskModel.removeTasksAsync(date, keys)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
+                            pendingOperations.release(date, keys);
                             taskList.setEnabled(true);
 
                             if (error != null) {
@@ -690,8 +708,7 @@ public class MainFrame extends JFrame {
             );
         }
 
-        addSingleTask(taskHourBox, taskEntry);
-        return true;
+        return addSingleTask(taskHourBox, taskEntry);
     }
 
     private boolean addIntervalTask(
@@ -719,12 +736,10 @@ public class MainFrame extends JFrame {
             entries.put(String.format("%02d", hour), taskEntry);
         }
 
-        saveTasksAsync(selectedDate, entries);
-
-        return true;
+        return saveTasksAsync(selectedDate, entries);
     }
 
-    private void addSingleTask(
+    private boolean addSingleTask(
             JComboBox<String> taskHourBox,
             TaskEntry taskEntry
     ) {
@@ -733,16 +748,33 @@ public class MainFrame extends JFrame {
                 taskHourBox.getSelectedIndex()
         );
 
-        saveTasksAsync(selectedDate, java.util.Map.of(taskKey, taskEntry));
+        return saveTasksAsync(
+                selectedDate,
+                java.util.Map.of(taskKey, taskEntry)
+        );
     }
 
-    private void saveTasksAsync(
+    private boolean saveTasksAsync(
             LocalDate date,
             java.util.Map<String, TaskEntry> entries
     ) {
+        var keys = Set.copyOf(entries.keySet());
+
+        if (!pendingOperations.tryAcquire(date, keys)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Одна или несколько выбранных часов уже изменяются.",
+                    "Операция выполняется",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return false;
+        }
+
         taskModel.setTasksAsync(date, entries)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
+                            pendingOperations.release(date, keys);
+
                             if (error != null) {
                                 showStorageError("сохранить задачу", error);
                                 return;
@@ -755,6 +787,8 @@ public class MainFrame extends JFrame {
                             calendarPanel.loadTasks();
                         })
                 );
+
+        return true;
     }
 
     private void refreshTaskViews() {

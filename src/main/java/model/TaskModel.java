@@ -14,6 +14,9 @@ public class TaskModel implements AutoCloseable {
     private final TaskRepository repository;
     private final TaskStorageExecutor storageExecutor;
 
+    private final PendingTaskOperations pendingOperations =
+            new PendingTaskOperations();
+
     public TaskModel() {
         this(new JsonTaskRepository());
     }
@@ -29,6 +32,10 @@ public class TaskModel implements AutoCloseable {
 
     public TaskEntry getTask(LocalDate date, String key) {
         return repository.getTask(date, key);
+    }
+
+    public PendingTaskOperations getPendingOperations() {
+        return pendingOperations;
     }
 
     /**

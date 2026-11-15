@@ -4,6 +4,7 @@ import app.MainApp;
 import model.TaskEntry;
 import model.TaskModel;
 import model.TaskPriority;
+import model.PendingTaskOperations;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -48,6 +49,8 @@ public class CalendarPanel extends JPanel {
 
     private final transient TaskModel taskModel;
 
+    private final transient PendingTaskOperations pendingOperations;
+
     private LocalDate weekStart;
     private JLabel title;
     private JButton todayBtn;
@@ -74,6 +77,7 @@ public class CalendarPanel extends JPanel {
 
     public CalendarPanel(TaskModel taskModel) {
         this.taskModel = taskModel;
+        this.pendingOperations = taskModel.getPendingOperations();
         this.weekStart = LocalDate.now(ZoneId.systemDefault()).with(java.time.DayOfWeek.MONDAY);
 
         setLayout(new BorderLayout(5, 5));
@@ -499,6 +503,15 @@ public class CalendarPanel extends JPanel {
 
                 var existing = (TaskEntry) model.getValueAt(r, c);
 
+                var date = weekStart.plusDays(c);
+
+                if (pendingOperations.isPending(
+                        date,
+                        String.format("%02d", r)
+                )) {
+                    return;
+                }
+
                 showEditTaskDialog(
                         r,
                         c,
@@ -654,6 +667,17 @@ public class CalendarPanel extends JPanel {
         var hour = String.format("%02d", row);
         var date = weekStart.plusDays(column);
         var targetWeekStart = weekStart;
+        var keys = Set.of(hour);
+
+        if (!pendingOperations.tryAcquire(date, keys)) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Эта задача уже изменяется. Дождитесь завершения операции.",
+                    "Операция выполняется",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            return false;
+        }
 
         var entry = existing != null
                 ? new TaskEntry(input, priority, existing.done())
@@ -662,6 +686,8 @@ public class CalendarPanel extends JPanel {
         taskModel.setTaskAsync(date, hour, entry)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
+                            pendingOperations.release(date, keys);
+
                             if (error != null) {
                                 showStorageError("сохранить задачу", error);
                                 return;
@@ -690,7 +716,7 @@ public class CalendarPanel extends JPanel {
             public void popupMenuWillBecomeVisible(
                     javax.swing.event.PopupMenuEvent e
             ) {
-                updateToggleDoneAction(toggleDone);
+                updateTaskActions(toggleDone, delete);
             }
 
             @Override
@@ -718,16 +744,36 @@ public class CalendarPanel extends JPanel {
         table.setComponentPopupMenu(menu);
     }
 
-    private void updateToggleDoneAction(JMenuItem toggleDone) {
-        var entry = getSelectedTask();
+    private void updateTaskActions(
+            JMenuItem toggleDone,
+            JMenuItem delete
+    ) {
+        var row = table.getSelectedRow();
+        var column = table.getSelectedColumn();
 
-        if (entry == null) {
+        if (row < 0 || column < 0) {
             toggleDone.setEnabled(false);
+            delete.setEnabled(false);
             toggleDone.setText(ACTION_COMPLETE);
             return;
         }
 
-        toggleDone.setEnabled(true);
+        var entry = getSelectedTask();
+
+        if (entry == null) {
+            toggleDone.setEnabled(false);
+            delete.setEnabled(false);
+            toggleDone.setText(ACTION_COMPLETE);
+            return;
+        }
+
+        var date = weekStart.plusDays(column);
+        var key = String.format("%02d", row);
+        var pending = pendingOperations.isPending(date, key);
+
+        toggleDone.setEnabled(!pending);
+        delete.setEnabled(!pending);
+
         toggleDone.setText(
                 entry.done()
                         ? ACTION_UNDO
@@ -764,12 +810,19 @@ public class CalendarPanel extends JPanel {
         var date = weekStart.plusDays(column);
         var targetWeekStart = weekStart;
         var key = String.format("%02d", row);
+        var keys = Set.of(key);
+
+        if (!pendingOperations.tryAcquire(date, keys)) {
+            return;
+        }
 
         var updatedEntry = entry.withDone(!entry.done());
 
         taskModel.setTaskAsync(date, key, updatedEntry)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
+                            pendingOperations.release(date, keys);
+
                             if (error != null) {
                                 showStorageError(
                                         "изменить статус задачи",
@@ -806,6 +859,15 @@ public class CalendarPanel extends JPanel {
             return;
         }
 
+        var date = weekStart.plusDays(column);
+        var targetWeekStart = weekStart;
+        var key = String.format("%02d", row);
+        var keys = Set.of(key);
+
+        if (pendingOperations.isPending(date, key)) {
+            return;
+        }
+
         var confirm = JOptionPane.showConfirmDialog(
                 this,
                 "Удалить задачу?",
@@ -818,13 +880,15 @@ public class CalendarPanel extends JPanel {
             return;
         }
 
-        var date = weekStart.plusDays(column);
-        var targetWeekStart = weekStart;
-        var key = String.format("%02d", row);
+        if (!pendingOperations.tryAcquire(date, keys)) {
+            return;
+        }
 
         taskModel.removeTaskAsync(date, key)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
+                            pendingOperations.release(date, keys);
+
                             if (error != null) {
                                 showStorageError("удалить задачу", error);
                                 return;

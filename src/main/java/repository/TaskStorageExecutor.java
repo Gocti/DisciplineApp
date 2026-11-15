@@ -85,7 +85,7 @@ public final class TaskStorageExecutor implements AutoCloseable {
                         closeFuture.complete(null);
                         return;
                     }
-                } catch (InterruptedException exception) {
+                } catch (InterruptedException _) {
                     interrupted = true;
                 }
             }
