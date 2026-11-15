@@ -5,6 +5,7 @@ import repository.TaskRepository;
 import repository.TaskStorageExecutor;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -34,15 +35,41 @@ public class TaskModel implements AutoCloseable {
         return repository.getTask(date, key);
     }
 
-    public PendingTaskOperations getPendingOperations() {
-        return pendingOperations;
+    /**
+     * Пытается зарезервировать задачи для изменения.
+     */
+    public boolean tryAcquireTasks(
+            LocalDate date,
+            Collection<String> keys
+    ) {
+        return pendingOperations.tryAcquire(date, keys);
+    }
+
+    /**
+     * Освобождает ранее зарезервированные задачи.
+     */
+    public void releaseTasks(
+            LocalDate date,
+            Collection<String> keys
+    ) {
+        pendingOperations.release(date, keys);
+    }
+
+    /**
+     * Проверяет, изменяется ли задача в данный момент.
+     */
+    public boolean isTaskPending(
+            LocalDate date,
+            String key
+    ) {
+        return pendingOperations.isPending(date, key);
     }
 
     /**
      * Синхронно сохраняет задачу.
      * Не вызывать из Swing EDT.
      */
-    public void setTask(
+     void setTask(
             LocalDate date,
             String key,
             TaskEntry entry
@@ -54,7 +81,7 @@ public class TaskModel implements AutoCloseable {
      * Синхронно удаляет задачу.
      * Не вызывать из Swing EDT.
      */
-    public void removeTask(LocalDate date, String key) {
+     void removeTask(LocalDate date, String key) {
         repository.removeTask(date, key);
     }
 

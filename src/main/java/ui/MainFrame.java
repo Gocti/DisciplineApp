@@ -4,7 +4,6 @@ import app.MainApp;
 import model.TaskEntry;
 import model.TaskModel;
 import model.TaskPriority;
-import model.PendingTaskOperations;
 
 
 import javax.swing.*;
@@ -51,12 +50,8 @@ public class MainFrame extends JFrame {
 
     private boolean closing;
 
-    private final transient PendingTaskOperations pendingOperations;
-
-
     public MainFrame(TaskModel taskModel) {
         this.taskModel = taskModel;
-        this.pendingOperations = taskModel.getPendingOperations();
 
         applyTheme();
         initFrame();
@@ -333,7 +328,7 @@ public class MainFrame extends JFrame {
                         .collect(java.util.stream.Collectors.toSet())
         );
 
-        if (!pendingOperations.tryAcquire(date, keys)) {
+        if (!taskModel.tryAcquireTasks(date, keys)) {
             JOptionPane.showMessageDialog(
                     this,
                     "Одна или несколько задач уже изменяются. Дождитесь завершения операции.",
@@ -348,7 +343,7 @@ public class MainFrame extends JFrame {
         taskModel.removeTasksAsync(date, keys)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
-                            pendingOperations.release(date, keys);
+                            taskModel.releaseTasks(date, keys);
                             taskList.setEnabled(true);
 
                             if (error != null) {
@@ -736,7 +731,7 @@ public class MainFrame extends JFrame {
     ) {
         var keys = Set.copyOf(entries.keySet());
 
-        if (!pendingOperations.tryAcquire(date, keys)) {
+        if (!taskModel.tryAcquireTasks(date, keys)) {
             JOptionPane.showMessageDialog(
                     this,
                     "Одна или несколько выбранных часов уже изменяются.",
@@ -749,7 +744,7 @@ public class MainFrame extends JFrame {
         taskModel.setTasksAsync(date, entries)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
-                            pendingOperations.release(date, keys);
+                            taskModel.releaseTasks(date, keys);
 
                             if (error != null) {
                                 StorageErrorDialog.show(this, "сохранить задачу", error);

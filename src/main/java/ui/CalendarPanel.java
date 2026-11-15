@@ -4,7 +4,6 @@ import app.MainApp;
 import model.TaskEntry;
 import model.TaskModel;
 import model.TaskPriority;
-import model.PendingTaskOperations;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -48,8 +47,6 @@ public class CalendarPanel extends JPanel {
 
     private final transient TaskModel taskModel;
 
-    private final transient PendingTaskOperations pendingOperations;
-
     private LocalDate weekStart;
     private JLabel title;
     private JButton todayBtn;
@@ -76,7 +73,6 @@ public class CalendarPanel extends JPanel {
 
     public CalendarPanel(TaskModel taskModel) {
         this.taskModel = taskModel;
-        this.pendingOperations = taskModel.getPendingOperations();
         this.weekStart = LocalDate.now(ZoneId.systemDefault()).with(java.time.DayOfWeek.MONDAY);
 
         setLayout(new BorderLayout(5, 5));
@@ -504,7 +500,7 @@ public class CalendarPanel extends JPanel {
 
                 var date = weekStart.plusDays(c);
 
-                if (pendingOperations.isPending(
+                if (taskModel.isTaskPending(
                         date,
                         String.format("%02d", r)
                 )) {
@@ -668,7 +664,7 @@ public class CalendarPanel extends JPanel {
         var targetWeekStart = weekStart;
         var keys = Set.of(hour);
 
-        if (!pendingOperations.tryAcquire(date, keys)) {
+        if (!taskModel.tryAcquireTasks(date, keys)) {
             JOptionPane.showMessageDialog(
                     this,
                     "Эта задача уже изменяется. Дождитесь завершения операции.",
@@ -685,7 +681,7 @@ public class CalendarPanel extends JPanel {
         taskModel.setTaskAsync(date, hour, entry)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
-                            pendingOperations.release(date, keys);
+                            taskModel.releaseTasks(date, keys);
 
                             if (error != null) {
                                 StorageErrorDialog.show(this, "сохранить задачу", error);
@@ -768,7 +764,7 @@ public class CalendarPanel extends JPanel {
 
         var date = weekStart.plusDays(column);
         var key = String.format("%02d", row);
-        var pending = pendingOperations.isPending(date, key);
+        var pending = taskModel.isTaskPending(date, key);
 
         toggleDone.setEnabled(!pending);
         delete.setEnabled(!pending);
@@ -811,7 +807,7 @@ public class CalendarPanel extends JPanel {
         var key = String.format("%02d", row);
         var keys = Set.of(key);
 
-        if (!pendingOperations.tryAcquire(date, keys)) {
+        if (!taskModel.tryAcquireTasks(date, keys)) {
             return;
         }
 
@@ -820,7 +816,7 @@ public class CalendarPanel extends JPanel {
         taskModel.setTaskAsync(date, key, updatedEntry)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
-                            pendingOperations.release(date, keys);
+                            taskModel.releaseTasks(date, keys);
 
                             if (error != null) {
                                 StorageErrorDialog.show(this, "изменить статус задачи", error);
@@ -860,7 +856,7 @@ public class CalendarPanel extends JPanel {
         var key = String.format("%02d", row);
         var keys = Set.of(key);
 
-        if (pendingOperations.isPending(date, key)) {
+        if (taskModel.isTaskPending(date, key)) {
             return;
         }
 
@@ -876,14 +872,14 @@ public class CalendarPanel extends JPanel {
             return;
         }
 
-        if (!pendingOperations.tryAcquire(date, keys)) {
+        if (!taskModel.tryAcquireTasks(date, keys)) {
             return;
         }
 
         taskModel.removeTaskAsync(date, key)
                 .whenComplete((_, error) ->
                         SwingUtilities.invokeLater(() -> {
-                            pendingOperations.release(date, keys);
+                            taskModel.releaseTasks(date, keys);
 
                             if (error != null) {
                                 StorageErrorDialog.show(this, "удалить задачу", error);
