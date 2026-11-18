@@ -540,5 +540,31 @@ class TaskModelTest {
         assertEquals(TaskPriority.NORMAL, task.priority());
         assertFalse(task.done());
     }
+    @Test
+    void failsWhenTaskEntryContainsUnknownField() throws IOException {
+        var storagePath = tempDir.resolve("tasks.json");
+
+        String invalidContent = """
+        {
+          "2026-11-18": {
+            "09": {
+              "text": "Test task",
+              "priority": "NORMAL",
+              "done": false,
+              "unknownField": "unexpected"
+            }
+          }
+        }
+        """;
+
+        Files.writeString(storagePath, invalidContent);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath)
+        );
+
+        assertEquals(invalidContent, Files.readString(storagePath));
+    }
 
 }
