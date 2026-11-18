@@ -68,6 +68,10 @@ public final class JsonTaskRepository implements TaskRepository {
     private static final TypeReference<Map<String, Map<String, TaskEntry>>> DATA_TYPE =
             new TypeReference<>() {};
 
+    private static final int MIN_HOUR = 0;
+    private static final int MAX_HOUR = 23;
+    private static final int HOUR_KEY_LENGTH = 2;
+
     private static final Path DEFAULT_STORAGE_PATH = Path.of(
             System.getProperty("user.home"), ".discipline-app", "tasks.json"
     );
@@ -101,6 +105,26 @@ public final class JsonTaskRepository implements TaskRepository {
         );
 
         return Map.copyOf(snapshot);
+    }
+    private void validateHourKey(String key) {
+        if (key == null
+                || key.length() != HOUR_KEY_LENGTH
+                || key.charAt(0) < '0'
+                || key.charAt(0) > '2'
+                || key.charAt(1) < '0'
+                || key.charAt(1) > '9') {
+            throw new IllegalArgumentException(
+                    "Invalid task hour key: " + key
+            );
+        }
+
+        int hour = Integer.parseInt(key);
+
+        if (hour < MIN_HOUR || hour > MAX_HOUR) {
+            throw new IllegalArgumentException(
+                    "Task hour must be between 00 and 23: " + key
+            );
+        }
     }
 
     @Override
@@ -156,7 +180,7 @@ public final class JsonTaskRepository implements TaskRepository {
                 candidate.computeIfAbsent(date, ignored -> new HashMap<>());
 
         entries.forEach((key, entry) -> {
-            Objects.requireNonNull(key, "key");
+            validateHourKey(key);
             Objects.requireNonNull(entry, "entry");
             dayTasks.put(key, entry);
         });
@@ -274,7 +298,9 @@ public final class JsonTaskRepository implements TaskRepository {
         Map<String, TaskEntry> validated = new HashMap<>();
 
         for (Map.Entry<String, TaskEntry> taskEntry : dayTasks.entrySet()) {
-            if (taskEntry.getKey() == null || taskEntry.getValue() == null) {
+            validateHourKey(taskEntry.getKey());
+
+            if (taskEntry.getValue() == null) {
                 throw new IOException(
                         "Обнаружена пустая задача за %s".formatted(date)
                 );
