@@ -40,6 +40,8 @@ public final class MainApp {
     private static final String KEY_FONT_NAME = "fontName";
     private static final String KEY_FONT_SIZE = "fontSize";
 
+    private static final String KEY_CLOSE_TO_TRAY = "closeToTray";
+
     private static final String GITHUB_API_URL =
             "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
 
@@ -355,6 +357,23 @@ public final class MainApp {
         var name = PREFS.get(KEY_FONT_NAME, "Arial");
         var size = PREFS.getInt(KEY_FONT_SIZE, 14);
         return new Font(name, Font.PLAIN, size);
+    }
+
+    // ===================== CLOSE TO TRAY =====================
+
+    /**
+     * Возвращает настройку сворачивания окна в системный трей.
+     * По умолчанию включено.
+     */
+    public static boolean isCloseToTrayEnabled() {
+        return PREFS.getBoolean(KEY_CLOSE_TO_TRAY, true);
+    }
+
+    /**
+     * Сохраняет настройку сворачивания окна в системный трей.
+     */
+    public static void setCloseToTrayEnabled(boolean enabled) {
+        PREFS.putBoolean(KEY_CLOSE_TO_TRAY, enabled);
     }
 
     // ===================== VERSION =====================

@@ -20,6 +20,15 @@ public final class TrayManager {
 
     private TrayManager() {}
 
+
+    /**
+     * Проверяет, установлена ли иконка приложения в системный трей.
+     */
+    public static boolean isInstalled() {
+        return trayIcon != null;
+    }
+
+
     public static void install(MainFrame frame) {
         if (!SystemTray.isSupported()) {
             return;

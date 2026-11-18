@@ -64,6 +64,22 @@ public class SettingsPanel extends JPanel {
         dark.addActionListener(themeListener);
         system.addActionListener(themeListener);
 
+        // ================= WINDOW BEHAVIOR =================
+
+        var closeToTray = new JCheckBox(
+                "Сворачивать в трей при закрытии окна",
+                MainApp.isCloseToTrayEnabled()
+        );
+
+        closeToTray.setBackground(bg);
+        closeToTray.setForeground(fg);
+
+        closeToTray.addActionListener(_ ->
+                MainApp.setCloseToTrayEnabled(
+                        closeToTray.isSelected()
+                )
+        );
+
         // ================= CALENDAR =================
 
         var compactCalendar = new JCheckBox("Компактная таблица календаря");
@@ -135,6 +151,7 @@ public class SettingsPanel extends JPanel {
                 Box.createVerticalStrut(8)
         );
 
+        themePanel.add(closeToTray);
         themePanel.add(compactCalendar);
 
         var fontLabel = new JLabel("Шрифт:");

@@ -93,14 +93,21 @@ public class MainFrame extends JFrame {
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 
+
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                // Скрываем окно, но оставляем фоновые механизмы работать.
-                setVisible(false);
-                TrayManager.notifyHidden();
+                if (TrayManager.isInstalled()) {
+                    // Трей доступен — скрываем окно.
+                    setVisible(false);
+                    TrayManager.notifyHidden();
+                } else {
+                    // Трей недоступен — корректно завершаем приложение.
+                    requestShutdown();
+                }
             }
         });
+
 
         // Меню полного выхода
         var menuBar = new JMenuBar();
