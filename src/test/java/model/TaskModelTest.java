@@ -347,6 +347,62 @@ class TaskModelTest {
                           }
                         }
                         """
+                ),
+                Arguments.of(
+                        "Hour out of range",
+                        """
+                        {
+                          "2026-11-18": {
+                            "24": {
+                              "text": "Test task",
+                              "priority": "NORMAL",
+                              "done": false
+                            }
+                          }
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Negative hour",
+                        """
+                        {
+                          "2026-11-18": {
+                            "-1": {
+                              "text": "Test task",
+                              "priority": "NORMAL",
+                              "done": false
+                            }
+                          }
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Hour without leading zero",
+                        """
+                        {
+                          "2026-11-18": {
+                            "9": {
+                              "text": "Test task",
+                              "priority": "NORMAL",
+                              "done": false
+                            }
+                          }
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Non-numeric hour",
+                        """
+                        {
+                          "2026-11-18": {
+                            "abc": {
+                              "text": "Test task",
+                              "priority": "NORMAL",
+                              "done": false
+                            }
+                          }
+                        }
+                        """
                 )
         );
     }
