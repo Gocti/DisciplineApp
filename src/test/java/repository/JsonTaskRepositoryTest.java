@@ -362,6 +362,77 @@ class JsonTaskRepositoryTest {
     }
 
     @Test
+    void shouldRestoreTasksOnNextStartupAfterPreviousRestoreFailed()
+            throws IOException {
+
+        Path storagePath = tempDir.resolve("retry-restore.json");
+        Path backupPath = tempDir.resolve("retry-restore.json.bak");
+
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        // Создаём две версии данных.
+        JsonTaskRepository initialRepository =
+                new JsonTaskRepository(storagePath);
+
+        initialRepository.setTask(
+                date,
+                "09",
+                new TaskEntry("Recoverable task", TaskPriority.NORMAL)
+        );
+
+        initialRepository.setTask(
+                date,
+                "10",
+                new TaskEntry("Newer task", TaskPriority.IMPORTANT)
+        );
+
+        String backupContent = Files.readString(backupPath);
+
+        // Повреждаем основной файл.
+        Files.writeString(storagePath, "{ invalid json");
+
+        // Первая попытка восстановления завершается ошибкой.
+        FileMover failingMover = createFailingMover(storagePath);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath, failingMover)
+        );
+
+        assertFalse(Files.exists(storagePath));
+
+        // Проверяем, что резервная копия сохранилась.
+        assertEquals(
+                backupContent,
+                Files.readString(backupPath)
+        );
+
+        // Вторая попытка: используем обычный репозиторий.
+        JsonTaskRepository recoveredRepository =
+                new JsonTaskRepository(storagePath);
+
+        assertTrue(Files.exists(storagePath));
+
+        assertEquals(
+                "Recoverable task",
+                recoveredRepository.getTask(date, "09").text()
+        );
+
+        assertNull(recoveredRepository.getTask(date, "10"));
+
+        // Проверяем, что восстановленный файл можно прочитать повторно.
+        JsonTaskRepository restartedRepository =
+                new JsonTaskRepository(storagePath);
+
+        assertEquals(
+                "Recoverable task",
+                restartedRepository.getTask(date, "09").text()
+        );
+
+        assertNull(restartedRepository.getTask(date, "10"));
+    }
+
+    @Test
     void shouldPreservePreviousStateWhenFinalFileReplacementFails()
             throws IOException {
 
