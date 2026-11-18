@@ -11,6 +11,11 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
+
+import java.util.stream.Stream;
 
 class TaskModelTest {
 
@@ -290,50 +295,66 @@ class TaskModelTest {
         assertEquals(backupContent, Files.readString(backupPath));
     }
 
-    @Test
-    void failsWhenStorageContainsInvalidDate() throws IOException {
+    @ParameterizedTest
+    @MethodSource("corruptedStorageCases")
+    void failsWhenStorageIsCorrupted(
+            String primaryContent,
+            String backupContent,
+            boolean primaryShouldExist
+    ) throws IOException {
+
         var storagePath = tempDir.resolve("tasks.json");
+        var backupPath = tempDir.resolve("tasks.json.bak");
 
-        String invalidContent = """
-            {
-              "not-a-date": {
-                "09": {
-                  "text": "Test task",
-                  "priority": "NORMAL",
-                  "done": false
-                }
-              }
-            }
-            """;
+        if (primaryContent != null) {
+            Files.writeString(storagePath, primaryContent);
+        }
 
-        Files.writeString(storagePath, invalidContent);
+        if (backupContent != null) {
+            Files.writeString(backupPath, backupContent);
+        }
 
         assertThrows(
                 TaskStorageException.class,
                 () -> new JsonTaskRepository(storagePath)
         );
 
-        assertEquals(invalidContent, Files.readString(storagePath));
+        assertEquals(primaryShouldExist, Files.exists(storagePath));
+
+        if (primaryContent != null) {
+            assertEquals(primaryContent, Files.readString(storagePath));
+        }
+
+        if (backupContent != null) {
+            assertEquals(backupContent, Files.readString(backupPath));
+        } else {
+            assertFalse(Files.exists(backupPath));
+        }
     }
 
-    @Test
-    void failsWhenDateHasNullTaskMap() throws IOException {
-        var storagePath = tempDir.resolve("tasks.json");
+    private static Stream<Arguments> corruptedStorageCases() {
+        return Stream.of(
+                // Повреждён основной файл, резервной копии нет.
+                Arguments.of(
+                        "{ invalid json",
+                        null,
+                        true
+                ),
 
-        String invalidContent = """
-            {
-              "2026-11-18": null
-            }
-            """;
+                // Повреждены оба файла.
+                Arguments.of(
+                        "{ invalid primary json",
+                        "{ invalid backup json",
+                        true
+                ),
 
-        Files.writeString(storagePath, invalidContent);
-
-        assertThrows(
-                TaskStorageException.class,
-                () -> new JsonTaskRepository(storagePath)
+                // Основной файл отсутствует, резервная копия повреждена.
+                Arguments.of(
+                        null,
+                        "{ invalid backup json",
+                        false
+                )
         );
-
-        assertEquals(invalidContent, Files.readString(storagePath));
     }
 
 }
