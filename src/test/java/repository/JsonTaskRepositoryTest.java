@@ -217,6 +217,34 @@ class JsonTaskRepositoryTest {
         );
     }
 
+    @Test
+    void shouldRejectEntireBatchWhenAnyKeyIsInvalid() {
+        Path storagePath = tempDir.resolve("set-batch.json");
+        JsonTaskRepository repository = new JsonTaskRepository(storagePath);
+
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        Map<String, TaskEntry> entries = new LinkedHashMap<>();
+
+        entries.put(
+                "10",
+                new TaskEntry("Valid task", TaskPriority.NORMAL)
+        );
+
+        entries.put(
+                "24",
+                new TaskEntry("Invalid task", TaskPriority.NORMAL)
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> repository.setTasks(date, entries)
+        );
+
+        assertFalse(repository.getTasksForDate(date).containsKey("10"));
+        assertFalse(Files.exists(storagePath));
+    }
+
     private Map<String, TaskEntry> createBatch(String version) {
         Map<String, TaskEntry> batch = new LinkedHashMap<>();
 
