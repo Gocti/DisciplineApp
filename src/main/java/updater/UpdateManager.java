@@ -308,32 +308,48 @@ public final class UpdateManager {
             return;
         }
 
-        mainFrame.requestShutdown(() -> {
-            try {
-                runInstaller(installerPath);
-                System.exit(0);
+        mainFrame.requestShutdown(
+                () -> {
+                    try {
+                        runInstaller(installerPath);
+                        System.exit(0);
 
-            } catch (IOException e) {
-                UPDATE_IN_PROGRESS.set(false);
+                    } catch (IOException | RuntimeException e) {
+                        UPDATE_IN_PROGRESS.set(false);
 
-                LOG.log(
-                        Level.SEVERE,
-                        "Не удалось запустить установщик",
-                        e
-                );
+                        LOG.log(
+                                Level.SEVERE,
+                                "Не удалось запустить установщик",
+                                e
+                        );
 
-                JOptionPane.showMessageDialog(
-                        null,
-                        "Не удалось запустить установщик обновления."
-                                + System.lineSeparator()
-                                + "Приложение будет закрыто.",
-                        "Ошибка обновления",
-                        JOptionPane.ERROR_MESSAGE
-                );
+                        JOptionPane.showMessageDialog(
+                                null,
+                                "Не удалось запустить установщик обновления."
+                                        + System.lineSeparator()
+                                        + "Приложение будет закрыто.",
+                                "Ошибка обновления",
+                                JOptionPane.ERROR_MESSAGE
+                        );
 
-                System.exit(1);
-            }
-        });
+                        System.exit(1);
+                    }
+                },
+                error -> {
+                    UPDATE_IN_PROGRESS.set(false);
+
+                    LOG.log(
+                            Level.SEVERE,
+                            "Не удалось завершить приложение перед обновлением",
+                            error
+                    );
+
+                    showUpdateError(
+                            owner,
+                            "Не удалось завершить приложение для установки обновления."
+                    );
+                }
+        );
     }
 
     private static MainFrame findMainFrame(Component owner) {

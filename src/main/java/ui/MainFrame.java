@@ -15,6 +15,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -124,6 +125,7 @@ public class MainFrame extends JFrame {
         getRootPane().setJMenuBar(menuBar);
     }
 
+
     /**
      * Запрашивает обычное завершение приложения.
      */
@@ -133,11 +135,30 @@ public class MainFrame extends JFrame {
 
     /**
      * Запрашивает корректное завершение приложения.
-     * afterClose выполняется на EDT после закрытия хранилища и окон.
+     * afterClose выполняется после успешного закрытия.
      */
     public void requestShutdown(Runnable afterClose) {
+        requestShutdown(
+                afterClose,
+                error -> StorageErrorDialog.show(
+                        this,
+                        "завершить приложение",
+                        error
+                )
+        );
+    }
+
+    /**
+     * Завершает приложение с обработкой результата закрытия хранилища.
+     */
+    public void requestShutdown(
+            Runnable afterClose,
+            Consumer<Throwable> onFailure
+    ) {
         if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> requestShutdown(afterClose));
+            SwingUtilities.invokeLater(
+                    () -> requestShutdown(afterClose, onFailure)
+            );
             return;
         }
 
@@ -165,11 +186,7 @@ public class MainFrame extends JFrame {
                                 glassPane.setVisible(false);
                                 setTitle(APP_TITLE);
 
-                                StorageErrorDialog.show(
-                                        this,
-                                        "завершить приложение",
-                                        error
-                                );
+                                onFailure.accept(error);
                                 return;
                             }
 
