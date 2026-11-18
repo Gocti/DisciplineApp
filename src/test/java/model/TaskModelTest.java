@@ -290,4 +290,30 @@ class TaskModelTest {
         assertEquals(backupContent, Files.readString(backupPath));
     }
 
+    @Test
+    void failsWhenStorageContainsInvalidDate() throws IOException {
+        var storagePath = tempDir.resolve("tasks.json");
+
+        String invalidContent = """
+            {
+              "not-a-date": {
+                "09": {
+                  "text": "Test task",
+                  "priority": "NORMAL",
+                  "done": false
+                }
+              }
+            }
+            """;
+
+        Files.writeString(storagePath, invalidContent);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath)
+        );
+
+        assertEquals(invalidContent, Files.readString(storagePath));
+    }
+
 }
