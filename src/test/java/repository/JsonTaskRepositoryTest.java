@@ -7,6 +7,8 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -256,6 +258,56 @@ class JsonTaskRepositoryTest {
         }
 
         return batch;
+    }
+
+    @Test
+    void shouldPreservePreviousStateWhenBackupUpdateFails() throws IOException {
+        Path storagePath = tempDir.resolve("backup-failure.json");
+        Path backupPath = tempDir.resolve("backup-failure.json.bak");
+
+        JsonTaskRepository repository = new JsonTaskRepository(storagePath);
+
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        TaskEntry originalTask =
+                new TaskEntry("Original task", TaskPriority.NORMAL);
+
+        TaskEntry newTask =
+                new TaskEntry("New task", TaskPriority.IMPORTANT);
+
+        repository.setTask(date, "09", originalTask);
+
+        String originalContent = Files.readString(storagePath);
+
+        // Создаём непустой каталог вместо файла резервной копии.
+        Files.createDirectory(backupPath);
+        Files.writeString(backupPath.resolve("keep.txt"), "keep");
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> repository.setTask(date, "10", newTask)
+        );
+
+        // В памяти осталось исходное состояние.
+        assertEquals(
+                originalTask,
+                repository.getTask(date, "09")
+        );
+
+        assertNull(repository.getTask(date, "10"));
+
+        // Основной файл не изменился.
+        assertEquals(
+                originalContent,
+                Files.readString(storagePath)
+        );
+
+        // Каталог резервной копии и его содержимое сохранены.
+        assertTrue(Files.isDirectory(backupPath));
+        assertEquals(
+                "keep",
+                Files.readString(backupPath.resolve("keep.txt"))
+        );
     }
 
     private void await(CountDownLatch latch) {
