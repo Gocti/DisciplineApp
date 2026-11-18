@@ -476,6 +476,36 @@ class TaskModelTest {
                           "done": "true"
                         }
                         """
+                ),
+                Arguments.of(
+                        "Boolean text",
+                        """
+                        {
+                          "text": true,
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Boolean priority",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": true,
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Numeric done",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": "NORMAL",
+                          "done": 1
+                        }
+                        """
                 )
         );
     }
