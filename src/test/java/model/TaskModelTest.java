@@ -506,6 +506,36 @@ class TaskModelTest {
                           "done": 1
                         }
                         """
+                ),
+                Arguments.of(
+                        "Empty text",
+                        """
+                        {
+                          "text": "",
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Whitespace-only text",
+                        """
+                        {
+                          "text": "   ",
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Tabs and line breaks only",
+                        """
+                        {
+                          "text": "\\t\\n",
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
                 )
         );
     }
