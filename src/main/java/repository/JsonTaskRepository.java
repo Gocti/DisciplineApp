@@ -8,6 +8,7 @@ import tools.jackson.databind.cfg.CoercionInputShape;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -37,6 +38,7 @@ public final class JsonTaskRepository implements TaskRepository {
     private static final Logger LOG =
             Logger.getLogger(JsonTaskRepository.class.getName());
     private static final ObjectMapper JSON = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
             .withCoercionConfig(String.class, config -> config
                     .setCoercion(
