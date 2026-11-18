@@ -12,12 +12,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.Preferences;
+import java.math.BigInteger;
+import java.util.regex.Pattern;
 
 public final class MainApp {
 
@@ -44,6 +45,9 @@ public final class MainApp {
 
     private static final String GITHUB_API_URL =
             "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
+
+    private static final Pattern VERSION_PATTERN =
+            Pattern.compile("(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)");
 
     private static final Duration UPDATE_CHECK_DELAY = Duration.ofSeconds(2);
     private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(5);
@@ -173,8 +177,10 @@ public final class MainApp {
 
             var version = normalizeVersion(tagNode.stringValue());
 
-            if (version.isBlank()) {
-                LOG.warning("GitHub вернул пустую версию приложения.");
+            if (!isValidVersion(version)) {
+                LOG.warning(() ->
+                        "GitHub вернул некорректную версию приложения: " + version
+                );
                 return null;
             }
 
@@ -314,31 +320,66 @@ public final class MainApp {
         }
     }
 
-    private static boolean isNewerVersion(String latestVersion, String currentVersion) {
-        var latestParts = parseVersion(normalizeVersion(latestVersion));
-        var currentParts = parseVersion(normalizeVersion(currentVersion));
-        var length = Math.max(latestParts.length, currentParts.length);
+    /**
+     * Проверяет соответствие версии формату MAJOR.MINOR.PATCH.
+     */
+    private static boolean isValidVersion(String version) {
+        return version != null
+                && VERSION_PATTERN.matcher(normalizeVersion(version)).matches();
+    }
 
-        for (int i = 0; i < length; i++) {
-            var latest = i < latestParts.length ? latestParts[i] : 0;
-            var current = i < currentParts.length ? currentParts[i] : 0;
-            if (latest != current) {
-                return latest > current;
+    /**
+     * Проверяет, является ли новая версия более поздней.
+     */
+    private static boolean isNewerVersion(
+            String latestVersion,
+            String currentVersion
+    ) {
+        BigInteger[] latestParts;
+        BigInteger[] currentParts;
+
+        try {
+            latestParts = parseVersion(latestVersion);
+            currentParts = parseVersion(currentVersion);
+
+        } catch (IllegalArgumentException e) {
+            LOG.log(
+                    Level.WARNING,
+                    "Невозможно сравнить версии приложения.",
+                    e
+            );
+            return false;
+        }
+
+        for (int i = 0; i < latestParts.length; i++) {
+            int comparison = latestParts[i].compareTo(currentParts[i]);
+
+            if (comparison != 0) {
+                return comparison > 0;
             }
         }
+
         return false;
     }
 
-    private static int[] parseVersion(String version) {
-        return Arrays.stream(version.split("\\."))
-                .mapToInt(part -> {
-                    try {
-                        return Integer.parseInt(part);
-                    } catch (NumberFormatException _) {
-                        return 0;
-                    }
-                })
-                .toArray();
+    /**
+     * Разбирает версию формата MAJOR.MINOR.PATCH.
+     */
+    private static BigInteger[] parseVersion(String version) {
+        var normalized = normalizeVersion(version);
+        var matcher = VERSION_PATTERN.matcher(normalized);
+
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException(
+                    "Некорректный формат версии: " + version
+            );
+        }
+
+        return new BigInteger[]{
+                new BigInteger(matcher.group(1)),
+                new BigInteger(matcher.group(2)),
+                new BigInteger(matcher.group(3))
+        };
     }
 
     private static String normalizeVersion(String version) {
