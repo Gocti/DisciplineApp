@@ -297,6 +297,69 @@ class JsonTaskRepositoryTest {
         );
     }
 
+    @Test
+    void shouldPreserveBackupWhenRestoringPrimaryFileFails()
+            throws IOException {
+
+        Path storagePath = tempDir.resolve("restore-failure.json");
+        Path backupPath = tempDir.resolve("restore-failure.json.bak");
+
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        // Создаём основной файл и резервную копию.
+        JsonTaskRepository initialRepository =
+                new JsonTaskRepository(storagePath);
+
+        initialRepository.setTask(
+                date,
+                "09",
+                new TaskEntry("Original task", TaskPriority.NORMAL)
+        );
+
+        initialRepository.setTask(
+                date,
+                "10",
+                new TaskEntry("Second task", TaskPriority.IMPORTANT)
+        );
+
+        String backupContent = Files.readString(backupPath);
+
+        // Повреждаем основной файл.
+        String corruptedContent = "{ invalid json";
+        Files.writeString(storagePath, corruptedContent);
+
+        // Имитируем ошибку при финальном восстановлении основного файла.
+        FileMover failingMover = createFailingMover(storagePath);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath, failingMover)
+        );
+
+        // Основной файл перемещён в карантин.
+        assertFalse(Files.exists(storagePath));
+
+        // Резервная копия осталась неизменной.
+        assertTrue(Files.exists(backupPath));
+        assertEquals(
+                backupContent,
+                Files.readString(backupPath)
+        );
+
+        // Повреждённый файл сохранился в карантине.
+        try (var files = Files.list(tempDir)) {
+            Path quarantine = files
+                    .filter(path -> path.getFileName().toString()
+                            .startsWith("restore-failure.json.corrupt-"))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertEquals(
+                    corruptedContent,
+                    Files.readString(quarantine)
+            );
+        }
+    }
 
     @Test
     void shouldPreservePreviousStateWhenFinalFileReplacementFails()
