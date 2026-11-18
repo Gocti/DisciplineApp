@@ -132,6 +132,7 @@ public final class MainApp {
                 });
     }
 
+
     /**
      * Получает последнюю версию приложения из GitHub API через Jackson.
      */
@@ -139,7 +140,8 @@ public final class MainApp {
         try {
             var request = HttpRequest.newBuilder()
                     .uri(URI.create(GITHUB_API_URL))
-                    .header("Accept", "application/vnd.github.v3+json")
+                    .timeout(HTTP_TIMEOUT)
+                    .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "DisciplineApp")
                     .GET()
                     .build();
@@ -149,30 +151,57 @@ public final class MainApp {
                     HttpResponse.BodyHandlers.ofString()
             );
 
-            if (response.statusCode() == 200) {
-                var root = JSON.readTree(response.body());
-                var tagNode = root.get("tag_name");
+            var statusCode = response.statusCode();
 
-                if (tagNode != null) {
-                    @SuppressWarnings("deprecation")
-                    var text = tagNode.asText();
-
-                    if (text != null && !text.isEmpty()) {
-                        return normalizeVersion(text);
-                    }
-                }
-
-                LOG.warning("Поле tag_name не найдено в ответе GitHub");
+            if (statusCode != 200) {
+                LOG.warning(() ->
+                        "GitHub API вернул HTTP %d при проверке обновлений."
+                                .formatted(statusCode)
+                );
+                return null;
             }
-        } catch (InterruptedException _) {
+
+            var root = JSON.readTree(response.body());
+            var tagNode = root.get("tag_name");
+
+            if (tagNode == null || !tagNode.isString()) {
+                LOG.warning(
+                        "Поле tag_name отсутствует или имеет некорректный формат."
+                );
+                return null;
+            }
+
+            var version = normalizeVersion(tagNode.stringValue());
+
+            if (version.isBlank()) {
+                LOG.warning("GitHub вернул пустую версию приложения.");
+                return null;
+            }
+
+            return version;
+
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+
+            LOG.log(
+                    Level.WARNING,
+                    "Проверка обновлений была прервана.",
+                    e
+            );
+
             return null;
-        } catch (Exception _) {
+
+        } catch (Exception e) {
+            LOG.log(
+                    Level.WARNING,
+                    "Не удалось получить последнюю версию с GitHub.",
+                    e
+            );
+
             return null;
         }
-
-        return null;
     }
+
 
     // ===================== THEME MODE =====================
     public static ThemeMode getThemeMode() {
