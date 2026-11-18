@@ -33,6 +33,9 @@ public final class JsonTaskRepository implements TaskRepository {
 
     private static final Logger LOG =
             Logger.getLogger(JsonTaskRepository.class.getName());
+
+    private final FileMover fileMover;
+
     private static final ObjectMapper JSON = JsonMapper.builder()
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
@@ -83,11 +86,16 @@ public final class JsonTaskRepository implements TaskRepository {
     }
 
     public JsonTaskRepository(Path storagePath) {
+        this(storagePath, JsonTaskRepository::moveFile);
+    }
+
+    JsonTaskRepository(Path storagePath, FileMover fileMover) {
         this.storagePath = Objects.requireNonNull(storagePath, "storagePath")
                 .toAbsolutePath().normalize();
         this.backupPath = this.storagePath.resolveSibling(
                 this.storagePath.getFileName() + ".bak"
         );
+        this.fileMover = Objects.requireNonNull(fileMover, "fileMover");
         loadFromDisk();
     }
 
@@ -387,13 +395,26 @@ public final class JsonTaskRepository implements TaskRepository {
     }
 
     private void moveReplacing(Path source, Path target) throws IOException {
+        fileMover.move(source, target);
+    }
+
+    private static void moveFile(Path source, Path target) throws IOException {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
+            Files.move(
+                    source,
+                    target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
         } catch (AtomicMoveNotSupportedException _) {
             LOG.warning("Атомарная замена не поддерживается для " + target
                     + "; используется обычная замена.");
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+
+            Files.move(
+                    source,
+                    target,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
         }
     }
 

@@ -247,19 +247,6 @@ class JsonTaskRepositoryTest {
         assertFalse(Files.exists(storagePath));
     }
 
-    private Map<String, TaskEntry> createBatch(String version) {
-        Map<String, TaskEntry> batch = new LinkedHashMap<>();
-
-        for (int hour = 0; hour < TASK_COUNT; hour++) {
-            batch.put(
-                    "%02d".formatted(hour),
-                    new TaskEntry(version, TaskPriority.NORMAL)
-            );
-        }
-
-        return batch;
-    }
-
     @Test
     void shouldPreservePreviousStateWhenBackupUpdateFails() throws IOException {
         Path storagePath = tempDir.resolve("backup-failure.json");
@@ -308,6 +295,83 @@ class JsonTaskRepositoryTest {
                 "keep",
                 Files.readString(backupPath.resolve("keep.txt"))
         );
+    }
+
+
+    @Test
+    void shouldPreservePreviousStateWhenFinalFileReplacementFails()
+            throws IOException {
+
+        Path storagePath = tempDir.resolve("final-move-failure.json");
+
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        TaskEntry originalTask =
+                new TaskEntry("Original task", TaskPriority.NORMAL);
+
+        TaskEntry newTask =
+                new TaskEntry("New task", TaskPriority.IMPORTANT);
+
+        // Создаём исходный JSON обычным репозиторием.
+        JsonTaskRepository initialRepository =
+                new JsonTaskRepository(storagePath);
+
+        initialRepository.setTask(date, "09", originalTask);
+
+        String originalContent = Files.readString(storagePath);
+
+        // Имитируем сбой только при финальной замене основного файла.
+        FileMover failingMover = createFailingMover(storagePath);
+
+        JsonTaskRepository repository =
+                new JsonTaskRepository(storagePath, failingMover);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> repository.setTask(date, "10", newTask)
+        );
+
+        // В памяти осталось исходное состояние.
+        assertEquals(originalTask, repository.getTask(date, "09"));
+        assertNull(repository.getTask(date, "10"));
+
+        // Основной JSON не изменился.
+        assertEquals(originalContent, Files.readString(storagePath));
+
+        // Резервная копия содержит исходный JSON.
+        Path backupPath = tempDir.resolve("final-move-failure.json.bak");
+
+        assertEquals(originalContent, Files.readString(backupPath));
+    }
+
+    private FileMover createFailingMover(Path storagePath) {
+        Path normalizedStoragePath = storagePath.toAbsolutePath().normalize();
+
+        return (source, target) -> {
+            if (target.equals(normalizedStoragePath)) {
+                throw new IOException("Simulated final replacement failure");
+            }
+
+            Files.move(
+                    source,
+                    target,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            );
+        };
+    }
+
+    private Map<String, TaskEntry> createBatch(String version) {
+        Map<String, TaskEntry> batch = new LinkedHashMap<>();
+
+        for (int hour = 0; hour < TASK_COUNT; hour++) {
+            batch.put(
+                    "%02d".formatted(hour),
+                    new TaskEntry(version, TaskPriority.NORMAL)
+            );
+        }
+
+        return batch;
     }
 
     private void await(CountDownLatch latch) {
