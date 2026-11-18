@@ -350,5 +350,125 @@ class TaskModelTest {
                 )
         );
     }
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidTaskEntryCases")
+    void failsWhenTaskEntryContainsInvalidValue(
+            String scenario,
+            String taskEntryJson
+    ) throws IOException {
+
+        var storagePath = tempDir.resolve("tasks.json");
+
+        String invalidContent = """
+            {
+              "2026-11-18": {
+                "09": %s
+              }
+            }
+            """.formatted(taskEntryJson);
+
+        Files.writeString(storagePath, invalidContent);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath)
+        );
+
+        assertEquals(invalidContent, Files.readString(storagePath));
+    }
+
+    private static Stream<Arguments> invalidTaskEntryCases() {
+        return Stream.of(
+                Arguments.of(
+                        "Missing text",
+                        """
+                        {
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Null text",
+                        """
+                        {
+                          "text": null,
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Missing priority",
+                        """
+                        {
+                          "text": "Test task",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Null priority",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": null,
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Unknown priority",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": "URGENT",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Null done",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": "NORMAL",
+                          "done": null
+                        }
+                        """
+                )
+        );
+    }
+    @Test
+    void defaultsMissingDoneToFalseForBackwardCompatibility()
+            throws IOException {
+
+        var storagePath = tempDir.resolve("tasks.json");
+
+        String content = """
+            {
+              "2026-11-18": {
+                "09": {
+                  "text": "Old task",
+                  "priority": "NORMAL"
+                }
+              }
+            }
+            """;
+
+        Files.writeString(storagePath, content);
+
+        var repository = new JsonTaskRepository(storagePath);
+
+        var task = repository.getTask(
+                LocalDate.of(2026, 11, 18),
+                "09"
+        );
+
+        assertNotNull(task);
+        assertEquals("Old task", task.text());
+        assertEquals(TaskPriority.NORMAL, task.priority());
+        assertFalse(task.done());
+    }
 
 }
