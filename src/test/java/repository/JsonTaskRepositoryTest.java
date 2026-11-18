@@ -4,19 +4,23 @@ import model.TaskEntry;
 import model.TaskPriority;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import java.io.IOException;
 
 class JsonTaskRepositoryTest {
 
@@ -165,6 +169,52 @@ class JsonTaskRepositoryTest {
                 repository.getTasksForDate(date);
 
         assertEquals(writerCount * tasksPerWriter, result.size());
+    }
+
+    @Test
+    void shouldRejectInvalidKeyWhenRemovingSingleTask() {
+        Path storagePath = tempDir.resolve("remove-single.json");
+        JsonTaskRepository repository = new JsonTaskRepository(storagePath);
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> repository.removeTask(date, "24")
+        );
+
+        assertFalse(Files.exists(storagePath));
+    }
+
+    @Test
+    void shouldRejectEntireRemovalWhenAnyKeyIsInvalid() throws IOException {
+        Path storagePath = tempDir.resolve("remove-multiple.json");
+        JsonTaskRepository repository = new JsonTaskRepository(storagePath);
+
+        LocalDate date = LocalDate.of(2026, 11, 18);
+
+        repository.setTask(
+                date,
+                "10",
+                new TaskEntry("Important task", TaskPriority.NORMAL)
+        );
+
+        String originalContent = Files.readString(storagePath);
+        Set<String> keys = Set.of("10", "24");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> repository.removeTasks(date, keys)
+        );
+
+        assertEquals(
+                "Important task",
+                repository.getTask(date, "10").text()
+        );
+
+        assertEquals(
+                originalContent,
+                Files.readString(storagePath)
+        );
     }
 
     private Map<String, TaskEntry> createBatch(String version) {
