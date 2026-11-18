@@ -28,13 +28,17 @@ public final class UpdateManager {
     private static final Logger LOG =
             Logger.getLogger(UpdateManager.class.getName());
 
+    private static final String APP_NAME = "DisciplineApp";
+
     private static final String GITHUB_API_URL =
             "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
 
     private static final String INSTALLER_NAME_PREFIX =
-            "DisciplineApp-Setup-";
+            APP_NAME + "-Setup-";
 
     private static final String INSTALLER_NAME_SUFFIX = ".exe";
+
+    private static final String URL_PATH_SEPARATOR = "/";
 
     private static final Duration CONNECT_TIMEOUT =
             Duration.ofSeconds(10);
@@ -148,7 +152,7 @@ public final class UpdateManager {
                 .uri(URI.create(GITHUB_API_URL))
                 .timeout(CONNECT_TIMEOUT)
                 .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "DisciplineApp")
+                .header("User-Agent", APP_NAME)
                 .GET()
                 .build();
 
@@ -203,7 +207,7 @@ public final class UpdateManager {
 
         for (JsonNode asset : assets) {
             if (isExpectedInstaller(asset, expectedAssetName)) {
-                return parseInstallerAsset(asset);
+                return parseInstallerAsset(asset, expectedAssetName);
             }
         }
 
@@ -231,7 +235,7 @@ public final class UpdateManager {
     /**
      * Извлекает ссылку и SHA-256 установщика.
      */
-    private static ReleaseInfo parseInstallerAsset(JsonNode asset)
+    private static ReleaseInfo parseInstallerAsset(JsonNode asset, String expectedAssetName)
             throws IOException {
 
         var downloadUrl = requireString(
@@ -239,6 +243,7 @@ public final class UpdateManager {
                 "browser_download_url",
                 "Установщик найден, но ссылка на скачивание отсутствует."
         );
+        validateDownloadUrl(downloadUrl, expectedAssetName);
 
         var digest = requireString(
                 asset,
@@ -262,6 +267,66 @@ public final class UpdateManager {
         }
 
         return new ReleaseInfo(downloadUrl, sha256);
+    }
+
+    /**
+     * Проверяет, что ссылка ведёт на ожидаемый установщик
+     * в официальном GitHub-репозитории DisciplineApp.
+     */
+    private static void validateDownloadUrl(
+            String downloadUrl,
+            String expectedAssetName
+    ) throws IOException {
+
+        final URI uri;
+
+        try {
+            uri = URI.create(downloadUrl);
+        } catch (IllegalArgumentException e) {
+            throw new IOException(
+                    "GitHub вернул некорректную ссылку на установщик.",
+                    e
+            );
+        }
+
+        var version = expectedAssetName.substring(
+                INSTALLER_NAME_PREFIX.length(),
+                expectedAssetName.length() - INSTALLER_NAME_SUFFIX.length()
+        );
+
+        var expectedPath = URI.create("https://github.com")
+                .resolve(String.join(
+                        URL_PATH_SEPARATOR,
+                        "Gocti",
+                        APP_NAME,
+                        "releases",
+                        "download",
+                        version,
+                        expectedAssetName
+                ))
+                .getRawPath();
+
+        if (!isExpectedDownloadUrl(uri, expectedPath)) {
+            throw new IOException(
+                    "GitHub вернул недопустимую ссылку на установщик."
+            );
+        }
+    }
+
+    /**
+     * Проверяет адрес и путь загрузки установщика.
+     */
+    private static boolean isExpectedDownloadUrl(
+            URI uri,
+            String expectedPath
+    ) {
+        return "https".equalsIgnoreCase(uri.getScheme())
+                && "github.com".equalsIgnoreCase(uri.getHost())
+                && uri.getPort() == -1
+                && uri.getUserInfo() == null
+                && uri.getQuery() == null
+                && uri.getFragment() == null
+                && expectedPath.equals(uri.getRawPath());
     }
 
     /**
@@ -411,7 +476,7 @@ public final class UpdateManager {
             var request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(DOWNLOAD_TIMEOUT)
-                    .header("User-Agent", "DisciplineApp")
+                    .header("User-Agent", APP_NAME)
                     .GET()
                     .build();
 
