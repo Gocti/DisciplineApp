@@ -135,8 +135,10 @@ class TaskModelTest {
                 new TaskEntry("Newer state", TaskPriority.IMPORTANT)
         );
 
+        // Повреждаем основной файл.
         Files.writeString(storagePath, "{ invalid json");
 
+        // Первый запуск: восстановление из резервной копии.
         var recovered = new JsonTaskRepository(storagePath);
 
         assertEquals(
@@ -147,6 +149,26 @@ class TaskModelTest {
         assertNull(recovered.getTask(date, "10"));
         assertTrue(Files.exists(storagePath));
 
+        // Сохраняем содержимое восстановленного JSON.
+        String recoveredContent = Files.readString(storagePath);
+
+        // Второй запуск: проверяем чтение восстановленного файла с диска.
+        var restarted = new JsonTaskRepository(storagePath);
+
+        assertEquals(
+                "Recover me",
+                restarted.getTask(date, "09").text()
+        );
+
+        assertNull(restarted.getTask(date, "10"));
+
+        // Повторный запуск не изменил содержимое файла.
+        assertEquals(
+                recoveredContent,
+                Files.readString(storagePath)
+        );
+
+        // Повреждённый оригинал должен остаться в карантине.
         try (var files = Files.list(tempDir)) {
             assertTrue(files.anyMatch(path ->
                     path.getFileName().toString()
