@@ -13,6 +13,12 @@ public record TaskEntry(String text, TaskPriority priority, boolean done) {
     public TaskEntry {
         Objects.requireNonNull(text, "text must not be null");
         Objects.requireNonNull(priority, "priority must not be null");
+
+        if (text.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Task text must not be blank"
+            );
+        }
     }
 
     public TaskEntry(String text, TaskPriority priority) {
