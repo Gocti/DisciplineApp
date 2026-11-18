@@ -218,4 +218,38 @@ class TaskModelTest {
                 () -> snapshot.put("11", invalidEntry)
         );
     }
+
+    @Test
+    void restoresMissingPrimaryFileFromBackup() throws IOException {
+        var storagePath = tempDir.resolve("tasks.json");
+        var date = LocalDate.of(2026, 5, 20);
+
+        var repository = new JsonTaskRepository(storagePath);
+
+        repository.setTask(
+                date,
+                "09",
+                new TaskEntry("Previous state", TaskPriority.NORMAL)
+        );
+
+        repository.setTask(
+                date,
+                "10",
+                new TaskEntry("Latest state", TaskPriority.IMPORTANT)
+        );
+
+        Files.delete(storagePath);
+
+        var recovered = new JsonTaskRepository(storagePath);
+
+        assertEquals(
+                "Previous state",
+                recovered.getTask(date, "09").text()
+        );
+
+        assertNull(recovered.getTask(date, "10"));
+
+        assertTrue(Files.exists(storagePath));
+        assertTrue(Files.exists(tempDir.resolve("tasks.json.bak")));
+    }
 }
