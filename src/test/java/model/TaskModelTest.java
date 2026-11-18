@@ -316,4 +316,24 @@ class TaskModelTest {
         assertEquals(invalidContent, Files.readString(storagePath));
     }
 
+    @Test
+    void failsWhenDateHasNullTaskMap() throws IOException {
+        var storagePath = tempDir.resolve("tasks.json");
+
+        String invalidContent = """
+            {
+              "2026-11-18": null
+            }
+            """;
+
+        Files.writeString(storagePath, invalidContent);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath)
+        );
+
+        assertEquals(invalidContent, Files.readString(storagePath));
+    }
+
 }
