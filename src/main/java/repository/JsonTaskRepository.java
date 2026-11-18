@@ -1,6 +1,11 @@
 package repository;
 
 import model.TaskEntry;
+import model.TaskPriority;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.cfg.CoercionAction;
+import tools.jackson.databind.cfg.CoercionInputShape;
+import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -31,7 +36,33 @@ public final class JsonTaskRepository implements TaskRepository {
 
     private static final Logger LOG =
             Logger.getLogger(JsonTaskRepository.class.getName());
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder()
+            .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+            .withCoercionConfig(String.class, config -> config
+                    .setCoercion(
+                            CoercionInputShape.Integer,
+                            CoercionAction.Fail
+                    )
+                    .setCoercion(
+                            CoercionInputShape.Float,
+                            CoercionAction.Fail
+                    )
+                    .setCoercion(
+                            CoercionInputShape.Boolean,
+                            CoercionAction.Fail
+                    )
+            )
+            .withCoercionConfig(TaskPriority.class, config -> config
+                    .setCoercion(
+                            CoercionInputShape.Integer,
+                            CoercionAction.Fail
+                    )
+                    .setCoercion(
+                            CoercionInputShape.Float,
+                            CoercionAction.Fail
+                    )
+            )
+            .build();
     private static final TypeReference<Map<String, Map<String, TaskEntry>>> DATA_TYPE =
             new TypeReference<>() {};
 

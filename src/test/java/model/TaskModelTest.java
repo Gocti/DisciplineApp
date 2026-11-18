@@ -436,6 +436,46 @@ class TaskModelTest {
                           "done": null
                         }
                         """
+                ),
+                Arguments.of(
+                        "Numeric text",
+                        """
+                        {
+                          "text": 123,
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Object text",
+                        """
+                        {
+                          "text": {},
+                          "priority": "NORMAL",
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "Numeric priority",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": 1,
+                          "done": false
+                        }
+                        """
+                ),
+                Arguments.of(
+                        "String done",
+                        """
+                        {
+                          "text": "Test task",
+                          "priority": "NORMAL",
+                          "done": "true"
+                        }
+                        """
                 )
         );
     }
