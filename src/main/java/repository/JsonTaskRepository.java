@@ -19,11 +19,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -201,16 +197,14 @@ public final class JsonTaskRepository implements TaskRepository {
     }
 
     @Override
-    public synchronized void removeTasks(
-            LocalDate date,
-            java.util.Set<String> keys
-    ) {
+    public synchronized void removeTasks(LocalDate date, Set<String> keys) {
         if (date == null || keys == null || keys.isEmpty()) {
             return;
         }
 
-        Map<String, TaskEntry> currentDay = tasks.get(date);
+        keys.forEach(this::validateHourKey);
 
+        Map<String, TaskEntry> currentDay = tasks.get(date);
         if (currentDay == null || keys.stream().noneMatch(currentDay::containsKey)) {
             return;
         }
