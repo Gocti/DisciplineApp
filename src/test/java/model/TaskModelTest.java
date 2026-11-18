@@ -252,4 +252,25 @@ class TaskModelTest {
         assertTrue(Files.exists(storagePath));
         assertTrue(Files.exists(tempDir.resolve("tasks.json.bak")));
     }
+
+    @Test
+    void failsWhenBothPrimaryFileAndBackupAreCorrupted() throws IOException {
+        var storagePath = tempDir.resolve("tasks.json");
+        var backupPath = tempDir.resolve("tasks.json.bak");
+
+        String primaryContent = "{ invalid primary json";
+        String backupContent = "{ invalid backup json";
+
+        Files.writeString(storagePath, primaryContent);
+        Files.writeString(backupPath, backupContent);
+
+        assertThrows(
+                TaskStorageException.class,
+                () -> new JsonTaskRepository(storagePath)
+        );
+
+        assertEquals(primaryContent, Files.readString(storagePath));
+        assertEquals(backupContent, Files.readString(backupPath));
+    }
+
 }
