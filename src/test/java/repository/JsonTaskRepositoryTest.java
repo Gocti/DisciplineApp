@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class JsonTaskRepositoryTest {
 
-    private static final int TASK_COUNT = 64;
+    private static final int TASK_COUNT = 24;
 
     @TempDir
     Path tempDir;
@@ -116,7 +116,7 @@ class JsonTaskRepositoryTest {
 
         assertEquals(
                 "60",
-                finalSnapshot.get("task-0").text()
+                finalSnapshot.get("00").text()
         );
     }
 
@@ -128,7 +128,7 @@ class JsonTaskRepositoryTest {
         LocalDate date = LocalDate.of(2026, 11, 15);
 
         int writerCount = 8;
-        int tasksPerWriter = 10;
+        int tasksPerWriter = 3;
 
         CountDownLatch start = new CountDownLatch(1);
         List<Future<?>> writers = new ArrayList<>();
@@ -141,7 +141,9 @@ class JsonTaskRepositoryTest {
                     await(start);
 
                     for (int task = 0; task < tasksPerWriter; task++) {
-                        String key = "writer-" + writerId + "-task-" + task;
+                        String key = "%02d".formatted(
+                                writerId * tasksPerWriter + task
+                        );
 
                         repository.setTask(
                                 date,
@@ -168,9 +170,9 @@ class JsonTaskRepositoryTest {
     private Map<String, TaskEntry> createBatch(String version) {
         Map<String, TaskEntry> batch = new LinkedHashMap<>();
 
-        for (int i = 0; i < TASK_COUNT; i++) {
+        for (int hour = 0; hour < TASK_COUNT; hour++) {
             batch.put(
-                    "task-" + i,
+                    "%02d".formatted(hour),
                     new TaskEntry(version, TaskPriority.NORMAL)
             );
         }
