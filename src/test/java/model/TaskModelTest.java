@@ -12,8 +12,8 @@ import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.stream.Stream;
 
@@ -295,64 +295,58 @@ class TaskModelTest {
         assertEquals(backupContent, Files.readString(backupPath));
     }
 
-    @ParameterizedTest
-    @MethodSource("corruptedStorageCases")
-    void failsWhenStorageIsCorrupted(
-            String primaryContent,
-            String backupContent,
-            boolean primaryShouldExist
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidStorageStructureCases")
+    void failsWhenStorageContainsInvalidStructure(
+            String scenario,
+            String invalidContent
     ) throws IOException {
 
         var storagePath = tempDir.resolve("tasks.json");
-        var backupPath = tempDir.resolve("tasks.json.bak");
 
-        if (primaryContent != null) {
-            Files.writeString(storagePath, primaryContent);
-        }
-
-        if (backupContent != null) {
-            Files.writeString(backupPath, backupContent);
-        }
+        Files.writeString(storagePath, invalidContent);
 
         assertThrows(
                 TaskStorageException.class,
                 () -> new JsonTaskRepository(storagePath)
         );
 
-        assertEquals(primaryShouldExist, Files.exists(storagePath));
-
-        if (primaryContent != null) {
-            assertEquals(primaryContent, Files.readString(storagePath));
-        }
-
-        if (backupContent != null) {
-            assertEquals(backupContent, Files.readString(backupPath));
-        } else {
-            assertFalse(Files.exists(backupPath));
-        }
+        assertEquals(invalidContent, Files.readString(storagePath));
     }
 
-    private static Stream<Arguments> corruptedStorageCases() {
+    private static Stream<Arguments> invalidStorageStructureCases() {
         return Stream.of(
-                // Повреждён основной файл, резервной копии нет.
                 Arguments.of(
-                        "{ invalid json",
-                        null,
-                        true
+                        "Invalid date",
+                        """
+                        {
+                          "not-a-date": {
+                            "09": {
+                              "text": "Test task",
+                              "priority": "NORMAL",
+                              "done": false
+                            }
+                          }
+                        }
+                        """
                 ),
-
-                // Повреждены оба файла.
                 Arguments.of(
-                        "{ invalid primary json",
-                        "{ invalid backup json",
-                        true
+                        "Null task map",
+                        """
+                        {
+                          "2026-11-18": null
+                        }
+                        """
                 ),
-
-                // Основной файл отсутствует, резервная копия повреждена.
                 Arguments.of(
-                        null,
-                        "{ invalid backup json",
-                        false
+                        "Null task entry",
+                        """
+                        {
+                          "2026-11-18": {
+                            "09": null
+                          }
+                        }
+                        """
                 )
         );
     }
