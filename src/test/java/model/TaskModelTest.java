@@ -19,13 +19,16 @@ import java.util.stream.Stream;
 
 class TaskModelTest {
 
+    private static final LocalDate BACKUP_TEST_DATE =
+            LocalDate.of(2026, 5, 21);
+
     @TempDir
     Path tempDir;
 
     @Test
     void persistsTasksBetweenInstances() {
         var storagePath = tempDir.resolve("tasks.json");
-        var date = LocalDate.of(2026, 5, 13);
+        var date = BACKUP_TEST_DATE;
         var entry = new TaskEntry("Deep work", TaskPriority.NORMAL);
 
         try (var model = new TaskModel(
@@ -61,7 +64,7 @@ class TaskModelTest {
     @Test
     void removeTaskDeletesEmptyDateBucket() {
         var storagePath = tempDir.resolve("tasks.json");
-        var date = LocalDate.of(2026, 5, 15);
+        var date = BACKUP_TEST_DATE;
 
         try (var model = new TaskModel(
                 new JsonTaskRepository(storagePath)
@@ -88,7 +91,7 @@ class TaskModelTest {
     @Test
     void createsBackupOfPreviousValidState() {
         var storagePath = tempDir.resolve("tasks.json");
-        var date = LocalDate.of(2026, 5, 16);
+        var date = BACKUP_TEST_DATE;
         var repository = new JsonTaskRepository(storagePath);
 
         repository.setTask(
@@ -118,9 +121,65 @@ class TaskModelTest {
     }
 
     @Test
+    void keepsBackupOneSuccessfulSaveBehindAfterMultipleChanges() {
+        var storagePath = tempDir.resolve("tasks.json");
+        var backupPath = tempDir.resolve("tasks.json.bak");
+        var date = BACKUP_TEST_DATE;
+
+        var repository = new JsonTaskRepository(storagePath);
+
+        // Сохранение №1: первая задача.
+        repository.setTask(
+                date,
+                "09",
+                new TaskEntry("First", TaskPriority.NORMAL)
+        );
+
+        // Сохранение №2: добавляем вторую задачу.
+        repository.setTask(
+                date,
+                "10",
+                new TaskEntry("Second", TaskPriority.IMPORTANT)
+        );
+
+        // Сохранение №3: изменяем первую задачу.
+        repository.setTask(
+                date,
+                "09",
+                new TaskEntry("Updated first", TaskPriority.IMPORTANT)
+        );
+
+        // Сохранение №4: удаляем вторую задачу.
+        repository.removeTask(date, "10");
+
+        // Основной файл должен содержать последнее состояние.
+        var primaryRepository = new JsonTaskRepository(storagePath);
+
+        assertEquals(
+                "Updated first",
+                primaryRepository.getTask(date, "09").text()
+        );
+
+        assertNull(primaryRepository.getTask(date, "10"));
+
+        // Резервная копия должна содержать состояние до последнего сохранения.
+        var backupRepository = new JsonTaskRepository(backupPath);
+
+        assertEquals(
+                "Updated first",
+                backupRepository.getTask(date, "09").text()
+        );
+
+        assertEquals(
+                "Second",
+                backupRepository.getTask(date, "10").text()
+        );
+    }
+
+    @Test
     void restoresCorruptedPrimaryFileFromBackup() throws IOException {
         var storagePath = tempDir.resolve("tasks.json");
-        var date = LocalDate.of(2026, 5, 17);
+        var date = BACKUP_TEST_DATE;
         var repository = new JsonTaskRepository(storagePath);
 
         repository.setTask(
@@ -197,7 +256,7 @@ class TaskModelTest {
 
         var storagePath = parentIsFile.resolve("tasks.json");
         var repository = new JsonTaskRepository(storagePath);
-        var date = LocalDate.of(2026, 5, 18);
+        var date = BACKUP_TEST_DATE;
         var entry = new TaskEntry(
                 "Must not appear",
                 TaskPriority.NORMAL
@@ -217,7 +276,7 @@ class TaskModelTest {
                 tempDir.resolve("tasks.json")
         );
 
-        var date = LocalDate.of(2026, 5, 19);
+        var date = BACKUP_TEST_DATE;
 
         repository.setTask(
                 date,
@@ -249,7 +308,7 @@ class TaskModelTest {
     @Test
     void restoresMissingPrimaryFileFromBackup() throws IOException {
         var storagePath = tempDir.resolve("tasks.json");
-        var date = LocalDate.of(2026, 5, 20);
+        var date = BACKUP_TEST_DATE;
 
         var repository = new JsonTaskRepository(storagePath);
 
