@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class UpdateManager {
 
@@ -47,6 +48,9 @@ public final class UpdateManager {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    private static final AtomicBoolean UPDATE_IN_PROGRESS =
+            new AtomicBoolean(false);
+
     private UpdateManager() {}
 
     /**
@@ -54,6 +58,13 @@ public final class UpdateManager {
      * и запускает её после корректного завершения приложения.
      */
     public static void updateAsync(Component owner) {
+
+        // Не допускаем одновременного запуска нескольких обновлений.
+        if (!UPDATE_IN_PROGRESS.compareAndSet(false, true)) {
+            LOG.warning("Обновление уже выполняется. Повторный запуск проигнорирован.");
+            return;
+        }
+
         var updateThread = new Thread(() -> {
             var installerPath = Path.of(
                     System.getProperty("java.io.tmpdir"),
@@ -62,6 +73,7 @@ public final class UpdateManager {
 
             try {
                 var release = getLatestRelease();
+
                 download(
                         release.downloadUrl(),
                         installerPath,
@@ -73,6 +85,8 @@ public final class UpdateManager {
                 );
 
             } catch (IOException e) {
+                UPDATE_IN_PROGRESS.set(false);
+
                 LOG.log(
                         Level.SEVERE,
                         "Не удалось загрузить или проверить обновление",
@@ -86,6 +100,7 @@ public final class UpdateManager {
                 );
 
             } catch (InterruptedException e) {
+                UPDATE_IN_PROGRESS.set(false);
                 Thread.currentThread().interrupt();
 
                 LOG.log(
@@ -98,7 +113,23 @@ public final class UpdateManager {
                         owner,
                         "Загрузка обновления была прервана."
                 );
+
+            } catch (RuntimeException e) {
+                UPDATE_IN_PROGRESS.set(false);
+
+                LOG.log(
+                        Level.SEVERE,
+                        "Непредвиденная ошибка обновления",
+                        e
+                );
+
+                showUpdateError(
+                        owner,
+                        "Произошла непредвиденная ошибка при обновлении.%n%s"
+                                .formatted(e.getMessage())
+                );
             }
+
         }, "discipline-app-updater");
 
         updateThread.setDaemon(false);
@@ -257,6 +288,8 @@ public final class UpdateManager {
         MainFrame mainFrame = findMainFrame(owner);
 
         if (mainFrame == null) {
+            UPDATE_IN_PROGRESS.set(false);
+
             LOG.severe(
                     "Не удалось найти главное окно приложения для завершения."
             );
@@ -274,6 +307,8 @@ public final class UpdateManager {
                 System.exit(0);
 
             } catch (IOException e) {
+                UPDATE_IN_PROGRESS.set(false);
+
                 LOG.log(
                         Level.SEVERE,
                         "Не удалось запустить установщик",
@@ -332,8 +367,10 @@ public final class UpdateManager {
 
     // ================= DOWNLOAD =================
 
+
     /**
-     * Скачивает установщик и проверяет его SHA-256.
+     * Скачивает установщик во временный файл,
+     * проверяет его SHA-256 и перемещает на конечное место.
      */
     private static void download(
             String url,
@@ -341,7 +378,13 @@ public final class UpdateManager {
             String expectedSha256
     ) throws IOException, InterruptedException {
 
+        var temporaryPath = target.resolveSibling(
+                target.getFileName() + ".part"
+        );
+
         try {
+            Files.deleteIfExists(temporaryPath);
+
             var request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(DOWNLOAD_TIMEOUT)
@@ -352,8 +395,9 @@ public final class UpdateManager {
             var response = HTTP_CLIENT.send(
                     request,
                     HttpResponse.BodyHandlers.ofFile(
-                            target,
+                            temporaryPath,
                             StandardOpenOption.CREATE,
+                            StandardOpenOption.WRITE,
                             StandardOpenOption.TRUNCATE_EXISTING
                     )
             );
@@ -365,22 +409,26 @@ public final class UpdateManager {
                 );
             }
 
-            if (!Files.isRegularFile(target) || Files.size(target) == 0) {
+            if (!Files.isRegularFile(temporaryPath)
+                    || Files.size(temporaryPath) == 0) {
                 throw new IOException(
                         "Скачанный установщик отсутствует или пуст."
                 );
             }
 
-            var actualSha256 = calculateSha256(target);
+            var actualSha256 = calculateSha256(temporaryPath);
 
             if (!MessageDigest.isEqual(
                     expectedSha256.getBytes(StandardCharsets.US_ASCII),
                     actualSha256.getBytes(StandardCharsets.US_ASCII)
             )) {
                 throw new IOException(
-                        "SHA-256 установщика не совпадает с контрольной суммой GitHub."
+                        "SHA-256 установщика не совпадает "
+                                + "с контрольной суммой GitHub."
                 );
             }
+
+            moveInstaller(temporaryPath, target);
 
             LOG.info(() ->
                     "Установщик успешно загружен и проверен. SHA-256: %s"
@@ -388,10 +436,41 @@ public final class UpdateManager {
             );
 
         } catch (IOException | InterruptedException e) {
-            Files.deleteIfExists(target);
+            try {
+                Files.deleteIfExists(temporaryPath);
+            } catch (IOException cleanupException) {
+                e.addSuppressed(cleanupException);
+            }
+
             throw e;
         }
     }
+
+
+    /**
+     * Перемещает проверенный установщик на конечное место.
+     * Использует атомарное перемещение, если оно поддерживается.
+     */
+    private static void moveInstaller(Path source, Path target)
+            throws IOException {
+
+        try {
+            Files.move(
+                    source,
+                    target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        } catch (AtomicMoveNotSupportedException _) {
+            Files.move(
+                    source,
+                    target,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        }
+    }
+
+
 
     /**
      * Вычисляет SHA-256 файла потоковым чтением.
