@@ -3,6 +3,7 @@ package updater;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import ui.MainFrame;
+import app.VersionUtils;
 
 import javax.swing.*;
 import java.awt.*;
@@ -164,13 +165,19 @@ public final class UpdateManager {
 
         var root = JSON.readTree(response.body());
 
-        var version = normalizeVersion(
+        var version = VersionUtils.normalizeVersion(
                 requireString(
                         root,
                         "tag_name",
                         "В ответе GitHub отсутствует корректный tag_name."
                 )
         );
+
+        if (!VersionUtils.isValidVersion(version)) {
+            throw new IOException(
+                    "GitHub вернул некорректную версию релиза: " + version
+            );
+        }
 
         var expectedAssetName =
                 INSTALLER_NAME_PREFIX + version + INSTALLER_NAME_SUFFIX;
@@ -512,17 +519,6 @@ public final class UpdateManager {
     }
 
     // ================= VERSION =================
-
-    private static String normalizeVersion(String version) {
-        var normalized = version.trim();
-
-        if (normalized.startsWith("v") || normalized.startsWith("V")) {
-            return normalized.substring(1);
-        }
-
-        return normalized;
-    }
-
     private record ReleaseInfo(
             String downloadUrl,
             String sha256

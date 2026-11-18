@@ -17,8 +17,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.Preferences;
-import java.math.BigInteger;
-import java.util.regex.Pattern;
 
 public final class MainApp {
 
@@ -45,9 +43,6 @@ public final class MainApp {
 
     private static final String GITHUB_API_URL =
             "https://api.github.com/repos/Gocti/DisciplineApp/releases/latest";
-
-    private static final Pattern VERSION_PATTERN =
-            Pattern.compile("(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)");
 
     private static final Duration UPDATE_CHECK_DELAY = Duration.ofSeconds(2);
     private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(5);
@@ -112,7 +107,15 @@ public final class MainApp {
                         return;
                     }
 
-                    if (isNewerVersion(latestVersion, currentVersion)) {
+                    if (!VersionUtils.isValidVersion(currentVersion)) {
+                        LOG.warning(() ->
+                                "Текущая версия приложения имеет некорректный формат: "
+                                        + currentVersion
+                        );
+                        return;
+                    }
+
+                    if (VersionUtils.isNewerVersion(latestVersion, currentVersion)) {
                         SwingUtilities.invokeLater(() -> {
                             var result = JOptionPane.showConfirmDialog(
                                     frame,
@@ -175,9 +178,9 @@ public final class MainApp {
                 return null;
             }
 
-            var version = normalizeVersion(tagNode.stringValue());
+            var version = VersionUtils.normalizeVersion(tagNode.stringValue());
 
-            if (!isValidVersion(version)) {
+            if (!VersionUtils.isValidVersion(version)) {
                 LOG.warning(() ->
                         "GitHub вернул некорректную версию приложения: " + version
                 );
@@ -320,82 +323,6 @@ public final class MainApp {
         }
     }
 
-    /**
-     * Проверяет соответствие версии формату MAJOR.MINOR.PATCH.
-     */
-    private static boolean isValidVersion(String version) {
-        return version != null
-                && VERSION_PATTERN.matcher(normalizeVersion(version)).matches();
-    }
-
-    /**
-     * Проверяет, является ли новая версия более поздней.
-     */
-    private static boolean isNewerVersion(
-            String latestVersion,
-            String currentVersion
-    ) {
-        BigInteger[] latestParts;
-        BigInteger[] currentParts;
-
-        try {
-            latestParts = parseVersion(latestVersion);
-            currentParts = parseVersion(currentVersion);
-
-        } catch (IllegalArgumentException e) {
-            LOG.log(
-                    Level.WARNING,
-                    "Невозможно сравнить версии приложения.",
-                    e
-            );
-            return false;
-        }
-
-        for (int i = 0; i < latestParts.length; i++) {
-            int comparison = latestParts[i].compareTo(currentParts[i]);
-
-            if (comparison != 0) {
-                return comparison > 0;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Разбирает версию формата MAJOR.MINOR.PATCH.
-     */
-    private static BigInteger[] parseVersion(String version) {
-        var normalized = normalizeVersion(version);
-        var matcher = VERSION_PATTERN.matcher(normalized);
-
-        if (!matcher.matches()) {
-            throw new IllegalArgumentException(
-                    "Некорректный формат версии: " + version
-            );
-        }
-
-        return new BigInteger[]{
-                new BigInteger(matcher.group(1)),
-                new BigInteger(matcher.group(2)),
-                new BigInteger(matcher.group(3))
-        };
-    }
-
-    private static String normalizeVersion(String version) {
-        if (version == null) {
-            return "";
-        }
-
-        var normalized = version.trim();
-
-        if (normalized.startsWith("v") || normalized.startsWith("V")) {
-            normalized = normalized.substring(1);
-        }
-
-        return normalized;
-    }
-
     // ===================== SCALE =====================
     public static double getScale() {
         return PREFS.getDouble(KEY_SCALE, 1.0);
@@ -447,14 +374,14 @@ public final class MainApp {
     }
 
     // ===================== VERSION =====================
-    public static String getCurrentVersion() {
-        var packageVersion =
-                MainApp.class.getPackage().getImplementationVersion();
+        public static String getCurrentVersion() {
+            var packageVersion =
+                    MainApp.class.getPackage().getImplementationVersion();
 
-        if (packageVersion == null || packageVersion.isBlank()) {
-            return "dev";
+            if (packageVersion == null || packageVersion.isBlank()) {
+                return "dev";
+            }
+
+            return VersionUtils.normalizeVersion(packageVersion);
         }
-
-        return normalizeVersion(packageVersion);
-    }
 }
