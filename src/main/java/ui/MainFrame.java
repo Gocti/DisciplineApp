@@ -97,12 +97,15 @@ public class MainFrame extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                if (TrayManager.isInstalled()) {
-                    // Трей доступен — скрываем окно.
+                if (MainApp.isCloseToTrayEnabled()
+                        && TrayManager.isInstalled()) {
+
+                    // Настройка включена и трей доступен — скрываем окно.
                     setVisible(false);
                     TrayManager.notifyHidden();
+
                 } else {
-                    // Трей недоступен — корректно завершаем приложение.
+                    // Настройка выключена или трей недоступен — завершаем приложение.
                     requestShutdown();
                 }
             }
